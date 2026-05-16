@@ -217,7 +217,7 @@ jobs:
       - name: Download release asset artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release-assets
+          path: artifacts/release-assets
           pattern: byi-*
           merge-multiple: true
 
@@ -245,7 +245,9 @@ jobs:
           cd packages/pkg
           PACK_OUTPUT="$(npm pack --json)"
           PACK_FILE="$(printf '%s\n' "$PACK_OUTPUT" | node -e "const fs = require('node:fs'); const text = fs.readFileSync(0, 'utf8'); const jsonStart = text.indexOf('['); if (jsonStart === -1) { process.stderr.write(text); process.exit(1); } const data = JSON.parse(text.slice(jsonStart)); process.stdout.write(data[0].filename);")"
-          mv "$PACK_FILE" "$GITHUB_WORKSPACE/release-assets/"
+          mkdir -p "$GITHUB_WORKSPACE/release-bundle"
+          cp "$GITHUB_WORKSPACE"/artifacts/release-assets/* "$GITHUB_WORKSPACE/release-bundle/"
+          mv "$PACK_FILE" "$GITHUB_WORKSPACE/release-bundle/"
 
       - name: Create release
         env:
@@ -254,11 +256,11 @@ jobs:
           TARGET_SHA: ${{ needs.prepare.outputs.target_sha }}
         run: |
           if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" release-assets/* \
+            gh release upload "$TAG_NAME" release-bundle/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
           else
-            gh release create "$TAG_NAME" release-assets/* \
+            gh release create "$TAG_NAME" release-bundle/* \
               --repo "$GITHUB_REPOSITORY" \
               --target "$TARGET_SHA" \
               --title "$TAG_NAME" \
