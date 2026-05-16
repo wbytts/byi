@@ -214,17 +214,17 @@ jobs:
       - build
     if: ${{ needs.prepare.outputs.should_publish_release == 'true' }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
       - name: Download release asset artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/release-assets
           pattern: byi-*
           merge-multiple: true
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.checkout_ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -242,11 +242,11 @@ jobs:
         env:
           BYI_PKG_SOURCE_DIR: ${{ github.workspace }}/artifacts/npm
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/release-bundle"
+          cp "$GITHUB_WORKSPACE"/artifacts/release-assets/* "$GITHUB_WORKSPACE/release-bundle/"
           cd packages/pkg
           PACK_OUTPUT="$(npm pack --json)"
           PACK_FILE="$(printf '%s\n' "$PACK_OUTPUT" | node -e "const fs = require('node:fs'); const text = fs.readFileSync(0, 'utf8'); const jsonStart = text.indexOf('['); if (jsonStart === -1) { process.stderr.write(text); process.exit(1); } const data = JSON.parse(text.slice(jsonStart)); process.stdout.write(data[0].filename);")"
-          mkdir -p "$GITHUB_WORKSPACE/release-bundle"
-          cp "$GITHUB_WORKSPACE"/artifacts/release-assets/* "$GITHUB_WORKSPACE/release-bundle/"
           mv "$PACK_FILE" "$GITHUB_WORKSPACE/release-bundle/"
 
       - name: Create release
