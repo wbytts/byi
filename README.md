@@ -134,22 +134,12 @@ byi sync push
 
 ### npm
 
-如果通过 npm 分发，需要先在仓库根目录准备 Rust 构建产物，再从 `packages/pkg` 发包：
-
-```bash
-cargo build --release
-pnpm --dir packages/pkg pack
-pnpm --dir packages/pkg publish
-```
-
 安装后会通过 npm 包内携带的 Rust 二进制执行 `byi`：
 
 ```bash
 npm install -g @wbytts/byi
 byi --help
 ```
-
-如果要让同一个 npm 包同时包含多个平台，需要先分别构建对应 target，再执行 `pack` / `publish`。
 
 macOS / Linux:
 
@@ -172,49 +162,3 @@ iwr https://raw.githubusercontent.com/wbytts/byi/main/scripts/install.ps1 -UseB 
 
 - `BYI_INSTALL_REPO`: GitHub 仓库，默认 `wbytts/byi`
 - `BYI_INSTALL_DIR`: 安装目录
-
-## 发布
-
-推荐通过 GitHub Actions 页面手动触发 `Release` workflow 发布安装包。也保留了 `v*.*.*` tag push 自动触发。
-
-```bash
-Actions -> Release -> Run workflow
-```
-
-GitHub Release 会附带这些原生安装资产：
-
-```text
-byi-x86_64-apple-darwin.tar.gz
-byi-aarch64-apple-darwin.tar.gz
-byi-x86_64-unknown-linux-gnu.tar.gz
-byi-aarch64-unknown-linux-gnu.tar.gz
-byi-x86_64-pc-windows-msvc.zip
-byi-aarch64-pc-windows-msvc.zip
-```
-
-同一次 workflow 还会生成一个汇总 npm 安装包资产：
-
-```text
-wbytts-byi-0.0.1.tgz
-```
-
-如果仓库配置了 `NPM_TOKEN` secret，workflow 还会自动把 `packages/pkg` 发布到 npm。发布 job 会先汇总各平台 runner 构建出的 Rust 二进制，再打成同一个 npm 包。
-
-发布约束：
-
-- 正式发布只允许来自默认分支历史上的提交
-- Git tag 版本必须和 `packages/pkg/package.json` 的 `version` 一致
-- `workflow_dispatch` 可用于手动测试构建；只有显式打开 `publish_release` 或 `publish_npm` 时才会进入发布阶段
-
-手动触发时的常用输入：
-
-- `ref`: 要构建的分支、commit 或 tag；默认当前分支
-- `release_tag`: 正式发布版本，例如 `v0.0.1`
-- `publish_release`: 是否创建或更新 GitHub Release
-- `publish_npm`: 是否发布到 npm
-
-常见用法：
-
-- 只测试构建：只填 `ref`
-- 发布 GitHub Release：填写 `ref` 和 `release_tag`，打开 `publish_release`
-- 同时发布 npm：再额外打开 `publish_npm`
