@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub NPM Publish"
+  short_description: "Build on GitHub, publish to npm."
+  default_prompt: "Use $by-github-npm-publish to set up or debug a GitHub Actions workflow that builds release artifacts, publishes a GitHub Release, and publishes a package to npm."

@@ -1,5 +1,4 @@
 /target
-/docs
 node_modules
 packages/*/dist
 packages/*/*.tgz
