@@ -1,0 +1,21 @@
+[package]
+name = "byi-server"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.9"
+byi-core = { version = "0.0.1", path = "../core" }
+byi-storage = { path = "../storage" }
+byi-webdav = { path = "../webdav" }
+dirs = "6.0.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.52.3", features = ["full"] }
+tower-http = { version = "0.6.10", features = ["fs", "cors"] }
+tracing = "0.1.44"
+toml = "0.9.8"
+
+[dev-dependencies]
+reqwest = { version = "0.12.25", features = ["json"] }
+tempfile = "3.23.0"

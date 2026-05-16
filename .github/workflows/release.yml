@@ -1,0 +1,299 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "要构建的 git ref，默认当前分支"
+        required: false
+        type: string
+      release_tag:
+        description: "要发布的 tag，例如 v0.0.1；留空则只构建不发布"
+        required: false
+        type: string
+      publish_release:
+        description: "是否创建 GitHub Release"
+        required: false
+        default: false
+        type: boolean
+      publish_npm:
+        description: "是否发布到 npm"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.event.inputs.release_tag || github.ref_name || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare Release Metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
+      target_sha: ${{ steps.meta.outputs.target_sha }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      package_version: ${{ steps.meta.outputs.package_version }}
+      should_publish_release: ${{ steps.meta.outputs.should_publish_release }}
+      should_publish_npm: ${{ steps.meta.outputs.should_publish_npm }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          INPUT_PUBLISH_NPM: ${{ inputs.publish_npm }}
+          PUSH_TAG: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE_VERSION="$(node -p "require('./packages/pkg/package.json').version")"
+          CHECKOUT_REF="${INPUT_REF:-${PUSH_TAG}}"
+          TARGET_SHA="$(git rev-parse HEAD)"
+          RELEASE_TAG=""
+          SHOULD_PUBLISH_RELEASE="false"
+          SHOULD_PUBLISH_NPM="false"
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            RELEASE_TAG="$PUSH_TAG"
+            SHOULD_PUBLISH_RELEASE="true"
+            SHOULD_PUBLISH_NPM="$HAS_NPM_TOKEN"
+          else
+            if [ "${INPUT_PUBLISH_RELEASE}" = "true" ] || [ "${INPUT_PUBLISH_NPM}" = "true" ]; then
+              if [ -z "${INPUT_RELEASE_TAG}" ]; then
+                echo "手动发布时必须提供 release_tag，例如 v0.0.1" >&2
+                exit 1
+              fi
+              RELEASE_TAG="$INPUT_RELEASE_TAG"
+            fi
+
+            SHOULD_PUBLISH_RELEASE="${INPUT_PUBLISH_RELEASE:-false}"
+            SHOULD_PUBLISH_NPM="${INPUT_PUBLISH_NPM:-false}"
+
+            if [ "$SHOULD_PUBLISH_NPM" = "true" ] && [ "$HAS_NPM_TOKEN" != "true" ]; then
+              echo "仓库未配置 NPM_TOKEN，不能执行 npm 发布。" >&2
+              exit 1
+            fi
+          fi
+
+          if [ -n "$RELEASE_TAG" ]; then
+            case "$RELEASE_TAG" in
+              v*.*.*) ;;
+              *)
+                echo "release_tag 必须匹配 v*.*.*，当前值: $RELEASE_TAG" >&2
+                exit 1
+                ;;
+            esac
+
+            TAG_VERSION="${RELEASE_TAG#v}"
+            if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+              echo "版本不一致: tag=$TAG_VERSION, packages/pkg/package.json=$PACKAGE_VERSION" >&2
+              exit 1
+            fi
+          fi
+
+          if [ "$SHOULD_PUBLISH_RELEASE" = "true" ] || [ "$SHOULD_PUBLISH_NPM" = "true" ]; then
+            git fetch origin "$DEFAULT_BRANCH" --depth=1
+            if ! git merge-base --is-ancestor "$TARGET_SHA" "origin/$DEFAULT_BRANCH"; then
+              echo "当前提交不在 $DEFAULT_BRANCH 分支历史上，拒绝发布。" >&2
+              exit 1
+            fi
+          fi
+
+          {
+            echo "checkout_ref=$CHECKOUT_REF"
+            echo "target_sha=$TARGET_SHA"
+            echo "release_tag=$RELEASE_TAG"
+            echo "package_version=$PACKAGE_VERSION"
+            echo "should_publish_release=$SHOULD_PUBLISH_RELEASE"
+            echo "should_publish_npm=$SHOULD_PUBLISH_NPM"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: macos-15
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            archive: tar.gz
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            archive: zip
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            archive: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package Unix
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/byi" dist/byi
+          tar -C dist -czf "byi-${{ matrix.target }}.tar.gz" byi
+
+      - name: Package Windows
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/byi.exe" "dist/byi.exe"
+          Compress-Archive -Path "dist/byi.exe" -DestinationPath "byi-${{ matrix.target }}.zip" -Force
+
+      - name: Upload release asset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: byi-${{ matrix.target }}
+          path: byi-${{ matrix.target }}.${{ matrix.archive }}
+          if-no-files-found: error
+
+      - name: Stage npm binary
+        shell: bash
+        run: |
+          mkdir -p "npm/${{ matrix.target }}/release"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            cp "target/${{ matrix.target }}/release/byi.exe" "npm/${{ matrix.target }}/release/byi.exe"
+          else
+            cp "target/${{ matrix.target }}/release/byi" "npm/${{ matrix.target }}/release/byi"
+          fi
+
+      - name: Upload npm binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ matrix.target }}
+          path: npm/${{ matrix.target }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs:
+      - prepare
+      - build
+    if: ${{ needs.prepare.outputs.should_publish_release == 'true' }}
+    steps:
+      - name: Download release asset artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: byi-*
+          merge-multiple: true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download npm binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/npm
+          pattern: npm-*
+          merge-multiple: true
+
+      - name: Pack npm package
+        env:
+          BYI_PKG_SOURCE_DIR: ${{ github.workspace }}/artifacts/npm
+        run: |
+          cd packages/pkg
+          PACK_FILE="$(npm pack --json | node -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); process.stdout.write(data[0].filename);")"
+          mv "$PACK_FILE" "$GITHUB_WORKSPACE/release-assets/"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.prepare.outputs.release_tag }}
+          TARGET_SHA: ${{ needs.prepare.outputs.target_sha }}
+        run: |
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$TAG_NAME" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$TARGET_SHA" \
+              --title "$TAG_NAME" \
+              --generate-notes
+          fi
+
+  publish-npm:
+    name: Publish npm Package
+    runs-on: ubuntu-24.04
+    needs:
+      - prepare
+      - build
+    if: ${{ needs.prepare.outputs.should_publish_npm == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Download npm binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/npm
+          pattern: npm-*
+          merge-multiple: true
+
+      - name: Publish package to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          BYI_PKG_SOURCE_DIR: ${{ github.workspace }}/artifacts/npm
+        run: |
+          cd packages/pkg
+          npm publish --access public

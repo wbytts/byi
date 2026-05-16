@@ -1,0 +1,12 @@
+{
+  "name": "byi-workspace",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter local-web build",
+    "dev": "pnpm --filter local-web dev",
+    "typecheck": "pnpm --filter local-web typecheck",
+    "pkg:build": "pnpm --dir packages/pkg build",
+    "pkg:pack": "pnpm --dir packages/pkg pack",
+    "pkg:pack:dry-run": "pnpm --dir packages/pkg pack --dry-run"
+  }
+}

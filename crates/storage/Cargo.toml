@@ -1,0 +1,9 @@
+[package]
+name = "byi-storage"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+byi-github = { path = "../github" }
+byi-webdav = { path = "../webdav" }
+serde = { version = "1.0.228", features = ["derive"] }

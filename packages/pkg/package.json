@@ -1,0 +1,26 @@
+{
+  "name": "@wbytts/byi",
+  "version": "0.0.1",
+  "description": "BYI CLI distributed through npm",
+  "license": "UNLICENSED",
+  "bin": {
+    "byi": "bin/byi.cjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/prepare-package.mjs",
+    "prepack": "node scripts/prepare-package.mjs",
+    "pack:dry-run": "npm pack --dry-run"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wbytts/byi.git"
+  }
+}
