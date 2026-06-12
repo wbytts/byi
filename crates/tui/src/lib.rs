@@ -50,19 +50,14 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut app::App) -> Result<(), String> {
-    let mut last_tick = std::time::Instant::now();
-    let tick_rate = std::time::Duration::from_millis(200);
+    // Initial draw
+    terminal
+        .draw(|f| ui::draw(f, app))
+        .map_err(|e| format!("绘制失败: {e}"))?;
 
     loop {
-        terminal
-            .draw(|f| ui::draw(f, app))
-            .map_err(|e| format!("绘制失败: {e}"))?;
-
-        let timeout = tick_rate
-            .checked_sub(last_tick.elapsed())
-            .unwrap_or_else(|| std::time::Duration::from_secs(0));
-
-        if crossterm::event::poll(timeout).map_err(|e| format!("事件轮询失败: {e}"))? {
+        // Block until input event (no busy-wait, no periodic redraw)
+        if crossterm::event::poll(std::time::Duration::from_millis(500)).map_err(|e| format!("事件轮询失败: {e}"))? {
             match event::read().map_err(|e| format!("读取事件失败: {e}"))? {
                 Event::Key(key) => {
                     if app.handle_key(key.code, key.modifiers) {
@@ -72,13 +67,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut app::App) -> Result
                 Event::Mouse(mouse) => {
                     app.handle_mouse(mouse);
                 }
-                _ => {}
+                _ => continue,
             }
+            // Redraw only after handling an event
+            terminal
+                .draw(|f| ui::draw(f, app))
+                .map_err(|e| format!("绘制失败: {e}"))?;
         }
 
-        if last_tick.elapsed() >= tick_rate {
-            app.on_tick();
-            last_tick = std::time::Instant::now();
-        }
+        // Expire status message (no redraw needed — next event will pick it up)
+        app.on_tick();
     }
 }
