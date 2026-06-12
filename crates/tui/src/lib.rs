@@ -51,7 +51,7 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut app::App) -> Result<(), String> {
     let mut last_tick = std::time::Instant::now();
-    let tick_rate = std::time::Duration::from_millis(60); // ~16fps for smooth animation
+    let tick_rate = std::time::Duration::from_millis(200);
 
     loop {
         terminal
