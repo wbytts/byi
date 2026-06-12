@@ -3,7 +3,8 @@ use ratatui::{
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{
-        Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, Gauge, GraphType,
+        canvas::{Canvas, Points},
+        Block, BorderType, Borders, Cell, Clear, Gauge,
         Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Sparkline, Table, Tabs,
         Wrap,
     },
@@ -205,8 +206,8 @@ fn draw_home(f: &mut Frame, app: &App, area: Rect) {
         .build();
     f.render_widget(big, chunks[0]);
 
-    // ── Canvas wave animation ──
-    draw_wave_canvas(f, app, chunks[1]);
+    // ── Particle field animation ──
+    draw_particle_field(f, app, chunks[1]);
 
     // ── Gauges row ──
     let total = app.skill_entries.len().max(1);
@@ -277,66 +278,67 @@ fn draw_home(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-/// Draw animated sine waves on ratatui Canvas
-fn draw_wave_canvas(f: &mut Frame, app: &App, area: Rect) {
-    let t = app.tick as f64 * 0.06;
+/// Draw floating particle field on Home page using Canvas
+fn draw_particle_field(f: &mut Frame, app: &App, area: Rect) {
+    let particle_colors = [LAVENDER, BLUE, SAPPHIRE, TEAL, MAUVE, PINK, PEACH];
 
-    // Pre-compute all wave data so datasets can reference it
-    let wave_colors = [LAVENDER, SAPPHIRE, TEAL];
-    let wave_data: Vec<Vec<(f64, f64)>> = (0..3)
-        .map(|layer| {
-            let freq = 0.3 + layer as f64 * 0.15;
-            let amp = 0.8 - layer as f64 * 0.2;
-            let speed = t + layer as f64 * 1.2;
-            (0..80)
-                .map(|i| {
-                    let x = i as f64 / 79.0 * 4.0 * std::f64::consts::PI;
-                    let y = amp * (x * freq + speed).sin();
-                    (x, y)
-                })
-                .collect()
-        })
-        .collect();
-
-    let datasets: Vec<Dataset<'_>> = wave_data
+    // Group particles by color for batch rendering
+    let mut groups: Vec<(Color, Vec<(f64, f64)>)> = particle_colors
         .iter()
-        .enumerate()
-        .map(|(layer, points)| {
-            Dataset::default()
-                .name(if layer == 0 { "λ" } else if layer == 1 { "ω" } else { "φ" })
-                .data(points)
-                .graph_type(GraphType::Line)
-                .style(Style::default().fg(wave_colors[layer]))
-        })
+        .map(|&c| (c, Vec::new()))
         .collect();
 
-    let x_labels = vec![
-        Span::styled("0", Style::default().fg(OVERLAY)),
-        Span::styled("2π", Style::default().fg(OVERLAY)),
-        Span::styled("4π", Style::default().fg(OVERLAY)),
-    ];
+    for p in &app.particles {
+        if p.life > 0.0 && (p.color_idx as usize) < groups.len() {
+            groups[p.color_idx as usize].1.push((p.x, p.y));
+        }
+    }
 
-    let chart = Chart::new(datasets)
-        .x_axis(
-            Axis::default()
-                .style(Style::default().fg(OVERLAY))
-                .bounds([0.0, 4.0 * std::f64::consts::PI])
-                .labels(x_labels),
-        )
-        .y_axis(
-            Axis::default()
-                .style(Style::default().fg(OVERLAY))
-                .bounds([-1.2, 1.2])
-                .labels(vec![
-                    Span::styled("-1", Style::default().fg(OVERLAY)),
-                    Span::styled("0", Style::default().fg(OVERLAY)),
-                    Span::styled("+1", Style::default().fg(OVERLAY)),
-                ]),
-        )
-        .legend_position(Some(ratatui::widgets::LegendPosition::TopRight))
-        .hidden_legend_constraints((Constraint::Min(0), Constraint::Min(0)));
+    let canvas = Canvas::default()
+        .marker(ratatui::symbols::Marker::Braille)
+        .x_bounds([0.0, 100.0])
+        .y_bounds([0.0, 100.0])
+        .paint(|ctx| {
+            for (color, points) in &groups {
+                if !points.is_empty() {
+                    ctx.draw(&Points {
+                        coords: points,
+                        color: *color,
+                    });
+                }
+            }
+            // Draw connecting lines between nearby particles (constellation effect)
+            let particles = &app.particles;
+            let max_dist = 15.0;
+            for i in 0..particles.len() {
+                for j in (i + 1)..particles.len() {
+                    let dx = particles[i].x - particles[j].x;
+                    let dy = particles[i].y - particles[j].y;
+                    let dist_sq = dx * dx + dy * dy;
+                    let dist = dist_sq.sqrt();
+                    if dist < max_dist {
+                        let alpha = 1.0 - dist / max_dist;
+                        let min_life = particles[i].life.min(particles[j].life);
+                        if alpha > 0.3 && min_life > 0.1 {
+                            ctx.draw(&ratatui::widgets::canvas::Line {
+                                x1: particles[i].x,
+                                y1: particles[i].y,
+                                x2: particles[j].x,
+                                y2: particles[j].y,
+                                color: particle_colors[particles[i].color_idx as usize],
+                            });
+                        }
+                    }
+                }
+            }
+        });
 
-    f.render_widget(chart.style(Style::default().bg(BG)), area);
+    f.render_widget(
+        canvas
+            .block(Block::default().style(Style::default().bg(BG)))
+            .background_color(BG),
+        area,
+    );
 }
 
 fn shortcut_row(key: &str, desc: &str, color: Color) -> Line<'static> {

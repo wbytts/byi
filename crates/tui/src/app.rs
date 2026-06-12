@@ -49,6 +49,19 @@ pub struct App {
     pub popup: Option<Popup>,
     pub input_cursor: usize,
     pub tick: u64,
+    pub particles: Vec<Particle>,
+}
+
+/// A single floating particle for the Home page background
+#[derive(Clone, Debug)]
+pub struct Particle {
+    pub x: f64,
+    pub y: f64,
+    pub vx: f64,
+    pub vy: f64,
+    pub life: f64,
+    pub max_life: f64,
+    pub color_idx: usize,
 }
 
 impl App {
@@ -77,6 +90,7 @@ impl App {
             popup: None,
             input_cursor: 0,
             tick: 0,
+            particles: Self::spawn_particles(40),
         })
     }
 
@@ -474,8 +488,75 @@ impl App {
                 self.status_message.clear();
             }
         }
+        self.update_particles();
     }
 
+    fn spawn_particles(count: usize) -> Vec<Particle> {
+        (0..count)
+            .map(|_| {
+                let angle = rand_simple() * std::f64::consts::PI * 2.0;
+                let speed = 0.01 + rand_simple() * 0.03;
+                Particle {
+                    x: rand_simple() * 100.0,
+                    y: rand_simple() * 100.0,
+                    vx: angle.cos() * speed,
+                    vy: angle.sin() * speed,
+                    life: rand_simple(),
+                    max_life: 0.5 + rand_simple() * 0.5,
+                    color_idx: (rand_simple() * 7.0) as usize,
+                }
+            })
+            .collect()
+    }
+
+    fn update_particles(&mut self) {
+        for p in &mut self.particles {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.003;
+
+            // Gentle gravity drift
+            p.vy += 0.0002;
+
+            // Wrap around boundaries
+            if p.x < 0.0 { p.x = 100.0; }
+            if p.x > 100.0 { p.x = 0.0; }
+            if p.y < 0.0 { p.y = 100.0; }
+            if p.y > 100.0 { p.y = 0.0; }
+
+            // Respawn dead particles
+            if p.life <= 0.0 {
+                let angle = rand_simple() * std::f64::consts::PI * 2.0;
+                let speed = 0.01 + rand_simple() * 0.03;
+                p.x = rand_simple() * 100.0;
+                p.y = rand_simple() * 100.0;
+                p.vx = angle.cos() * speed;
+                p.vy = angle.sin() * speed;
+                p.life = p.max_life;
+                p.color_idx = (rand_simple() * 7.0) as usize;
+            }
+        }
+    }
+}
+
+/// Simple deterministic pseudo-random for particle initialization
+fn rand_simple() -> f64 {
+    use std::cell::RefCell;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    thread_local! {
+        static SEED: RefCell<u64> = RefCell::new(0x1234567890ABCDEF);
+    }
+    SEED.with(|s| {
+        let mut hasher = DefaultHasher::new();
+        s.borrow().hash(&mut hasher);
+        let new = hasher.finish();
+        *s.borrow_mut() = new;
+        (new & 0xFFFFFF) as f64 / 0xFFFFFF as f64
+    })
+}
+
+impl App {
     pub fn selected_skill(&self) -> Option<&SkillEntry> {
         self.skill_entries.get(self.skill_selected)
     }
