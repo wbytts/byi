@@ -12,7 +12,7 @@ use tui_big_text::{BigTextBuilder, PixelSize};
 
 use crate::app::{App, Popup, Tab};
 
-// ── Catppuccin Mocha palette ──────────────────────────────────────
+// ── Catppuccin Mocha (high contrast) ──────────────────────────────
 const BG: Color = Color::Rgb(24, 24, 37);
 const SURFACE: Color = Color::Rgb(30, 30, 46);
 const OVERLAY: Color = Color::Rgb(49, 50, 68);
@@ -28,7 +28,6 @@ const PEACH: Color = Color::Rgb(250, 179, 135);
 const RED: Color = Color::Rgb(243, 139, 168);
 const PINK: Color = Color::Rgb(245, 194, 231);
 const MAUVE: Color = Color::Rgb(203, 166, 247);
-
 // ── Main draw ─────────────────────────────────────────────────────
 
 pub fn draw(f: &mut Frame, app: &App) {
