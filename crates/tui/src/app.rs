@@ -35,6 +35,7 @@ pub struct App {
     pub current_tab: Tab,
     pub should_quit: bool,
     pub status_message: String,
+    pub status_ttl: u8,
     pub hello_message: String,
 
     pub skill_manager: SkillManager,
@@ -47,6 +48,7 @@ pub struct App {
     pub sync_config: Option<RemoteConfig>,
     pub popup: Option<Popup>,
     pub input_cursor: usize,
+    pub tick: u64,
 }
 
 impl App {
@@ -63,6 +65,7 @@ impl App {
             current_tab: Tab::Home,
             should_quit: false,
             status_message: String::new(),
+            status_ttl: 0,
             hello_message: hello,
             skill_manager,
             skill_entries: entries,
@@ -73,6 +76,7 @@ impl App {
             sync_config,
             popup: None,
             input_cursor: 0,
+            tick: 0,
         })
     }
 
@@ -441,9 +445,18 @@ impl App {
 
     fn set_status(&mut self, msg: String) {
         self.status_message = msg;
+        self.status_ttl = 40; // ~10 seconds at 250ms tick
     }
 
-    pub fn on_tick(&mut self) {}
+    pub fn on_tick(&mut self) {
+        self.tick = self.tick.wrapping_add(1);
+        if self.status_ttl > 0 {
+            self.status_ttl -= 1;
+            if self.status_ttl == 0 {
+                self.status_message.clear();
+            }
+        }
+    }
 
     pub fn selected_skill(&self) -> Option<&SkillEntry> {
         self.skill_entries.get(self.skill_selected)
