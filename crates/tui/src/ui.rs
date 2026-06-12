@@ -92,24 +92,36 @@ pub fn draw(f: &mut Frame, app: &App) {
 fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     let spinner = THROBBER[app.tick as usize % THROBBER.len()];
 
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(0), Constraint::Length(10)])
+        .split(area);
+
+    // Left side: keys or status message
     if app.status_message.is_empty() {
         let keys = vec![
             Span::styled(format!(" {spinner} "), Style::default().fg(MAUVE)),
             Span::styled(" q ", Style::default().bg(RED).fg(BG).bold()),
             Span::styled(" 退出 ", Style::default().fg(SUBTEXT)),
             Span::styled(" 1/2/3 ", Style::default().bg(BLUE).fg(BG).bold()),
-            Span::styled(" 切换标签 ", Style::default().fg(SUBTEXT)),
-            Span::styled(" 🖱 滚轮翻页 ", Style::default().fg(OVERLAY)),
+            Span::styled(" 切换 ", Style::default().fg(SUBTEXT)),
         ];
-        f.render_widget(Paragraph::new(Line::from(keys)).style(Style::default().bg(BG)), area);
+        f.render_widget(Paragraph::new(Line::from(keys)).style(Style::default().bg(BG)), chunks[0]);
     } else {
         let msg_color = if app.status_ttl < 10 { SUBTEXT } else { LAVENDER };
         let line = Line::from(vec![
             Span::styled(format!(" {spinner} "), Style::default().fg(MAUVE)),
             Span::styled(format!("{}", app.status_message), Style::default().fg(msg_color).bold()),
         ]);
-        f.render_widget(Paragraph::new(line).style(Style::default().bg(BG)), area);
+        f.render_widget(Paragraph::new(line).style(Style::default().bg(BG)), chunks[0]);
     }
+
+    // Right side: version badge
+    let ver = Line::from(Span::styled(" v0.0.1 ", Style::default().fg(BG).bg(MAUVE).bold()));
+    f.render_widget(
+        Paragraph::new(ver).alignment(Alignment::Right).style(Style::default().bg(BG)),
+        chunks[1],
+    );
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────
@@ -359,7 +371,7 @@ fn draw_skills(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// Animated skeleton loading for empty skills
+/// Animated skeleton / empty state for no skills
 fn draw_skill_empty(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(" ⚡ Skills ", Style::default().fg(SAPPHIRE).bold()))
@@ -370,36 +382,65 @@ fn draw_skill_empty(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let frame = (app.tick / 4) as usize % SKELETON_CHARS.len();
-    let ch = SKELETON_CHARS[frame];
-    let shimmer_color = match frame {
-        0 => OVERLAY,
-        1 => SURFACE,
-        2 => SUBTEXT,
-        _ => SURFACE,
-    };
+    let frame = (app.tick / 4) as usize % 4;
+    let shimmer = [OVERLAY, SURFACE, SUBTEXT, SURFACE][frame];
+    let mid = inner.height / 2;
+    let w = inner.width as usize;
+
+    // Build centered card with shimmer boxes
+    let box_w = 40.min(w.saturating_sub(4));
+    let bar = "─".repeat(box_w);
+    let pad = " ".repeat((w.saturating_sub(box_w)) / 2);
+    let shimmer_short = SKELETON_CHARS[frame].repeat(box_w.saturating_sub(4));
 
     let lines: Vec<Line> = (0..inner.height)
         .map(|row| {
-            if row == inner.height / 2 - 2 {
-                Line::from(Span::styled(
-                    "  还没有任何 Skill",
-                    Style::default().fg(TEXT).bold(),
-                ))
-                .alignment(Alignment::Center)
-            } else if row == inner.height / 2 - 1 {
-                Line::from(Span::styled(
-                    "  按 a 添加本地 / g 从 GitHub 添加",
-                    Style::default().fg(SUBTEXT),
-                ))
-                .alignment(Alignment::Center)
-            } else if row == inner.height / 2 {
-                Line::from("")
+            if row == mid.saturating_sub(4) {
+                // Top border of card
+                Line::from(vec![
+                    Span::styled(pad.clone(), Style::default()),
+                    Span::styled(format!("╭{bar}╮"), Style::default().fg(shimmer)),
+                ])
+            } else if row == mid.saturating_sub(3) {
+                // Empty icon area + shimmer
+                Line::from(vec![
+                    Span::styled(pad.clone(), Style::default()),
+                    Span::styled(format!("│ {shimmer_short} │"), Style::default().fg(shimmer)),
+                ])
+            } else if row == mid.saturating_sub(2) {
+                // Main message
+                let msg = "  还没有任何 Skill";
+                let inner_pad = " ".repeat((box_w.saturating_sub(msg.len())) / 2);
+                Line::from(vec![
+                    Span::styled(pad.clone(), Style::default()),
+                    Span::styled("│ ", Style::default().fg(shimmer)),
+                    Span::styled(format!("{inner_pad}{msg}"), Style::default().fg(TEXT).bold()),
+                    Span::styled(" │", Style::default().fg(shimmer)),
+                ])
+            } else if row == mid.saturating_sub(1) {
+                // Hint
+                let hint = " 按 a 添加 / g 从 GitHub ";
+                let inner_pad = " ".repeat((box_w.saturating_sub(hint.len())) / 2);
+                Line::from(vec![
+                    Span::styled(pad.clone(), Style::default()),
+                    Span::styled("│ ", Style::default().fg(shimmer)),
+                    Span::styled(format!("{inner_pad}{hint}"), Style::default().fg(SUBTEXT)),
+                    Span::styled(" │", Style::default().fg(shimmer)),
+                ])
+            } else if row == mid {
+                // Bottom border of card
+                Line::from(vec![
+                    Span::styled(pad.clone(), Style::default()),
+                    Span::styled(format!("╰{bar}╯"), Style::default().fg(shimmer)),
+                ])
+            } else if (row as i32 - mid as i32).unsigned_abs() <= 8 {
+                // Near the card: faint shimmer dots
+                Line::from(vec![
+                    Span::styled(pad.clone(), Style::default()),
+                    Span::styled(format!("│{shimmer_short}│"), Style::default().fg(SURFACE)),
+                ])
             } else {
-                // Skeleton shimmer lines
-                let width = inner.width as usize;
-                let line_ch = ch.repeat(width);
-                Line::from(Span::styled(line_ch, Style::default().fg(shimmer_color)))
+                Line::from("")
             }
         })
         .collect();
@@ -547,6 +588,21 @@ fn draw_skill_detail(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled("  ", Style::default()),
                 Span::styled(&entry.skill.name, Style::default().fg(LAVENDER).bold().add_modifier(Modifier::ITALIC)),
             ]),
+            // Health bar line
+            Line::from(vec![
+                Span::styled("  ", Style::default()),
+                if entry.installed.enabled {
+                    // Animated enabled bar
+                    let pulse = (app.tick as f64 * 0.05).sin() * 0.5 + 0.5;
+                    let filled = (pulse * 12.0) as usize + 4;
+                    let bar_full = "█".repeat(filled.min(20));
+                    let bar_empty = "░".repeat(20_usize.saturating_sub(filled.min(20)));
+                    Span::styled(format!("{bar_full}{bar_empty}"), Style::default().fg(GREEN))
+                } else {
+                    Span::styled("░░░░░░░░░░░░░░░░░░░░", Style::default().fg(RED))
+                },
+                Span::styled(format!(" {}", if entry.installed.enabled { "● ACTIVE" } else { "○ INACTIVE" }), Style::default().fg(status_color).bold()),
+            ]),
             Line::from(vec![
                 Span::styled("  ", Style::default()),
                 Span::styled(&entry.skill.id, Style::default().fg(SUBTEXT)),
@@ -622,13 +678,6 @@ fn draw_skill_detail(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(text).block(block).wrap(Wrap { trim: true }), area);
 }
 
-fn section_header(label: &str, color: Color) -> Line<'static> {
-    Line::from(vec![
-        Span::styled("  ── ", Style::default().fg(OVERLAY)),
-        Span::styled(label.to_string(), Style::default().fg(color).bold()),
-        Span::styled(" ──", Style::default().fg(OVERLAY)),
-    ])
-}
 
 fn field_row<'a>(label: &str, value: &'a str, value_color: Color) -> Line<'a> {
     Line::from(vec![
@@ -638,11 +687,25 @@ fn field_row<'a>(label: &str, value: &'a str, value_color: Color) -> Line<'a> {
     ])
 }
 
-// ── Sync tab ──────────────────────────────────────────────────────
+fn section_header(label: &str, color: Color) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("  ╭", Style::default().fg(OVERLAY)),
+        Span::styled("─".repeat(2), Style::default().fg(OVERLAY)),
+        Span::styled(label.to_string(), Style::default().fg(color).bold()),
+        Span::styled("─".repeat(8), Style::default().fg(OVERLAY)),
+        Span::styled("╮", Style::default().fg(OVERLAY)),
+    ])
+}
 
 fn draw_sync(f: &mut Frame, app: &App, area: Rect) {
+    let pulse = (app.tick as f64 * 0.04).sin() * 0.5 + 0.5;
+    let conn_color = if pulse > 0.5 { TEAL } else { SAPPHIRE };
+    let conn_icon = if app.sync_config.is_some() { "◉" } else { "○" };
     let block = Block::default()
-        .title(Span::styled(" ⟳ Sync ", Style::default().fg(TEAL).bold()))
+        .title(Span::styled(
+            format!(" {conn_icon} Sync "),
+            Style::default().fg(conn_color).bold(),
+        ))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -652,8 +715,19 @@ fn draw_sync(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     let text = if let Some(remote) = &app.sync_config {
+        let conn_status = if app.sync_config.is_some() {
+            let dot_phase = (app.tick / 3) as usize % 4;
+            let dots = ".".repeat(dot_phase);
+            format!("已连接{dots}")
+        } else {
+            "未连接".to_string()
+        };
         let mut lines = vec![
             Line::from(""),
+            Line::from(vec![
+                Span::styled("  ● ", Style::default().fg(GREEN)),
+                Span::styled(conn_status, Style::default().fg(GREEN)),
+            ]).alignment(Alignment::Center),
             Line::from(Span::styled("─── 同步配置 ───", Style::default().fg(MAUVE).bold())).alignment(Alignment::Center),
         ];
 
