@@ -3,8 +3,9 @@ use ratatui::{
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{
-        Block, BorderType, Borders, Cell, Clear, Gauge, Paragraph, Row, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Sparkline, Table, Tabs, Wrap,
+        Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, Gauge, GraphType,
+        Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Sparkline, Table, Tabs,
+        Wrap,
     },
     Frame,
 };
@@ -30,11 +31,9 @@ const PINK: Color = Color::Rgb(245, 194, 231);
 const MAUVE: Color = Color::Rgb(203, 166, 247);
 const FLAMINGO: Color = Color::Rgb(245, 224, 220);
 
-// ── Sparkle frames for Home animation ─────────────────────────────
 const SPARKLES: &[&str] = &["✦", "✧", "⋆", "★", "✶", "✴", "✳", "✺"];
-
-// ── Throbber frames for status spinner ────────────────────────────
 const THROBBER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SKELETON_CHARS: &[&str] = &["░", "▒", "▓", "▒"];
 
 // ── Main draw ─────────────────────────────────────────────────────
 
@@ -59,72 +58,55 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 }
 
-// ── Status bar with animated spinner ──────────────────────────────
+// ── Status bar ────────────────────────────────────────────────────
 
 fn draw_status(f: &mut Frame, app: &App, area: Rect) {
+    let spinner = THROBBER[app.tick as usize % THROBBER.len()];
+
     if app.status_message.is_empty() {
-        let spinner_frame = THROBBER[app.tick as usize % THROBBER.len()];
         let keys = vec![
-            Span::styled(format!(" {spinner_frame} "), Style::default().fg(MAUVE)),
+            Span::styled(format!(" {spinner} "), Style::default().fg(MAUVE)),
             Span::styled(" q ", Style::default().bg(RED).fg(BG).bold()),
             Span::styled(" 退出 ", Style::default().fg(SUBTEXT)),
             Span::styled(" 1/2/3 ", Style::default().bg(BLUE).fg(BG).bold()),
             Span::styled(" 切换标签 ", Style::default().fg(SUBTEXT)),
+            Span::styled(" 🖱 滚轮翻页 ", Style::default().fg(OVERLAY)),
         ];
-        f.render_widget(
-            Paragraph::new(Line::from(keys)).style(Style::default().bg(BG)),
-            area,
-        );
+        f.render_widget(Paragraph::new(Line::from(keys)).style(Style::default().bg(BG)), area);
     } else {
-        let spinner_frame = THROBBER[app.tick as usize % THROBBER.len()];
-        let fade_alpha = if app.status_ttl < 10 { app.status_ttl as u16 * 25 } else { 255 };
-        let msg_color = if fade_alpha > 128 { LAVENDER } else { SUBTEXT };
+        let msg_color = if app.status_ttl < 10 { SUBTEXT } else { LAVENDER };
         let line = Line::from(vec![
-            Span::styled(format!(" {spinner_frame} "), Style::default().fg(MAUVE)),
+            Span::styled(format!(" {spinner} "), Style::default().fg(MAUVE)),
             Span::styled(format!("{}", app.status_message), Style::default().fg(msg_color).bold()),
         ]);
-        f.render_widget(
-            Paragraph::new(line).style(Style::default().bg(BG)),
-            area,
-        );
+        f.render_widget(Paragraph::new(line).style(Style::default().bg(BG)), area);
     }
 }
 
-// ── Tabs with animated underline ──────────────────────────────────
+// ── Tabs ──────────────────────────────────────────────────────────
 
 fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
     let tab_index = app.current_tab as usize;
     let tab_colors = [LAVENDER, SAPPHIRE, TEAL];
     let tab_icons = ["⌂", "⚡", "⟳"];
     let tab_labels = ["Home", "Skills", "Sync"];
+    let sparkle = SPARKLES[app.tick as usize % SPARKLES.len()];
 
     let titles: Vec<Line> = (0..3)
         .map(|i| {
-            if i == tab_index {
-                Line::from(Span::styled(
-                    format!(" {} {} ", tab_icons[i], tab_labels[i]),
-                    Style::default().fg(tab_colors[i]).bold(),
-                ))
+            let style = if i == tab_index {
+                Style::default().fg(tab_colors[i]).bold()
             } else {
-                Line::from(Span::styled(
-                    format!(" {} {} ", tab_icons[i], tab_labels[i]),
-                    Style::default().fg(SUBTEXT),
-                ))
-            }
+                Style::default().fg(SUBTEXT)
+            };
+            Line::from(Span::styled(format!(" {} {} ", tab_icons[i], tab_labels[i]), style))
         })
         .collect();
-
-    // Animated sparkle in logo
-    let sparkle_idx = app.tick as usize % SPARKLES.len();
-    let sparkle = SPARKLES[sparkle_idx];
 
     let tabs = Tabs::new(titles)
         .block(
             Block::default()
-                .title(Span::styled(
-                    format!(" {sparkle} byi "),
-                    Style::default().fg(MAUVE).bold(),
-                ))
+                .title(Span::styled(format!(" {sparkle} byi "), Style::default().fg(MAUVE).bold()))
                 .title_alignment(Alignment::Left)
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
@@ -133,16 +115,13 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
         )
         .select(tab_index)
         .highlight_style(
-            Style::default()
-                .fg(BG)
-                .bg(tab_colors[tab_index])
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(BG).bg(tab_colors[tab_index]).add_modifier(Modifier::BOLD),
         )
         .divider(Span::styled("│", Style::default().fg(OVERLAY)));
     f.render_widget(tabs, area);
 }
 
-// ── Content router ────────────────────────────────────────────────
+// ── Content ───────────────────────────────────────────────────────
 
 fn draw_content(f: &mut Frame, app: &App, area: Rect) {
     match app.current_tab {
@@ -152,7 +131,7 @@ fn draw_content(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-// ── Home tab — animated banner + stats gauges ─────────────────────
+// ── Home: big banner + canvas waves + gauges ──────────────────────
 
 fn draw_home(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
@@ -166,49 +145,29 @@ fn draw_home(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),  // big text banner
-            Constraint::Length(2),  // tagline + sparkle bar
-            Constraint::Length(3),  // stats gauges
+            Constraint::Length(6),  // banner
+            Constraint::Length(6),  // canvas wave
+            Constraint::Length(3),  // gauges
             Constraint::Min(0),     // shortcuts
         ])
         .split(inner);
 
-    // ── Animated big text banner ──────────────────────────────
-    let cycle = (app.tick / 4) as usize % 7;
+    // ── Animated banner ──
+    let cycle = (app.tick / 8) as usize % 7;
     let banner_colors = [MAUVE, LAVENDER, BLUE, SAPPHIRE, TEAL, PINK, FLAMINGO];
-    let banner_color = banner_colors[cycle];
-
     let big = BigTextBuilder::default()
         .pixel_size(PixelSize::HalfHeight)
-        .lines(vec![
-            Line::from(Span::styled("byi", Style::default().fg(banner_color).bold())),
-        ])
+        .lines(vec![Line::from(Span::styled(
+            "byi",
+            Style::default().fg(banner_colors[cycle]).bold(),
+        ))])
         .build();
     f.render_widget(big, chunks[0]);
 
-    // ── Animated sparkle divider + tagline ─────────────────────
-    let width = chunks[1].width as usize;
-    let tagline = "✦ AI Skill Manager ✦";
-    let sparkle_idx = app.tick as usize % SPARKLES.len();
-    let sparkle = SPARKLES[sparkle_idx];
-    let dash_len = (width.saturating_sub(tagline.len() + 4)) / 2;
-    let divider = format!(
-        "{sparkle}{d:─<dash$}{sparkle} {tagline} {sparkle}{d:─<dash$}{sparkle}",
-        d = "",
-        dash = dash_len,
-        tagline = tagline,
-        sparkle = sparkle,
-    );
-    let tagline_line = Line::from(Span::styled(
-        divider,
-        Style::default().fg(MAUVE).italic(),
-    ));
-    f.render_widget(
-        Paragraph::new(tagline_line).style(Style::default().bg(BG)),
-        chunks[1],
-    );
+    // ── Canvas wave animation ──
+    draw_wave_canvas(f, app, chunks[1]);
 
-    // ── Stats gauges row ──────────────────────────────────────
+    // ── Gauges row ──
     let total = app.skill_entries.len().max(1);
     let enabled = app.skill_entries.iter().filter(|e| e.installed.enabled).count();
     let github_count = app.skill_entries.iter().filter(|e| e.installed.source.starts_with("github:")).count();
@@ -222,93 +181,138 @@ fn draw_home(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(chunks[2]);
 
-    // Enabled gauge
     let enabled_ratio = if total > 0 { enabled as f64 / total as f64 } else { 0.0 };
-    let enabled_gauge = Gauge::default()
-        .block(Block::default()
-            .title(Span::styled(" 启用率 ", Style::default().fg(GREEN).bold()))
-            .style(Style::default().bg(BG)))
-        .gauge_style(Style::default().fg(GREEN).bg(SURFACE))
-        .ratio(enabled_ratio)
-        .label(Span::styled(
-            format!("{enabled}/{total}"),
-            Style::default().fg(TEXT).bold(),
-        ));
-    f.render_widget(enabled_gauge, gauge_chunks[0]);
+    f.render_widget(
+        Gauge::default()
+            .block(Block::default().title(Span::styled(" ● 启用率 ", Style::default().fg(GREEN).bold())).style(Style::default().bg(BG)))
+            .gauge_style(Style::default().fg(GREEN).bg(SURFACE))
+            .ratio(enabled_ratio)
+            .label(Span::styled(format!("{enabled}/{total}"), Style::default().fg(TEXT).bold())),
+        gauge_chunks[0],
+    );
 
-    // GitHub gauge
     let github_ratio = if total > 0 { github_count as f64 / total as f64 } else { 0.0 };
-    let github_gauge = Gauge::default()
-        .block(Block::default()
-            .title(Span::styled(" GitHub ", Style::default().fg(SAPPHIRE).bold()))
-            .style(Style::default().bg(BG)))
-        .gauge_style(Style::default().fg(SAPPHIRE).bg(SURFACE))
-        .ratio(github_ratio)
-        .label(Span::styled(
-            format!("{github_count}/{total}"),
-            Style::default().fg(TEXT).bold(),
-        ));
-    f.render_widget(github_gauge, gauge_chunks[1]);
+    f.render_widget(
+        Gauge::default()
+            .block(Block::default().title(Span::styled(" ⎇ GitHub ", Style::default().fg(SAPPHIRE).bold())).style(Style::default().bg(BG)))
+            .gauge_style(Style::default().fg(SAPPHIRE).bg(SURFACE))
+            .ratio(github_ratio)
+            .label(Span::styled(format!("{github_count}/{total}"), Style::default().fg(TEXT).bold())),
+        gauge_chunks[1],
+    );
 
-    // Sparkline — fake activity visualization using tick
-    let spark_data: Vec<u64> = (0..20)
+    // Animated sparkline
+    let spark_data: Vec<u64> = (0..30)
         .map(|i| {
-            let phase = app.tick as f64 + i as f64 * 0.7;
-            ((phase.sin() * 3.0 + 5.0).max(0.0)) as u64
+            let phase = app.tick as f64 * 0.08 + i as f64 * 0.4;
+            ((phase.sin() * 3.0 + 5.0).max(0.0) * (1.0 + 0.3 * (phase * 0.3).cos())) as u64
         })
         .collect();
-    let sparkline = Sparkline::default()
-        .block(Block::default()
-            .title(Span::styled(" 活动 ", Style::default().fg(PEACH).bold()))
-            .style(Style::default().bg(BG)))
-        .data(&spark_data)
-        .style(Style::default().fg(PEACH).bg(SURFACE));
-    f.render_widget(sparkline, gauge_chunks[2]);
+    f.render_widget(
+        Sparkline::default()
+            .block(Block::default().title(Span::styled(" ~ 活动 ", Style::default().fg(PEACH).bold())).style(Style::default().bg(BG)))
+            .data(&spark_data)
+            .style(Style::default().fg(PEACH).bg(SURFACE)),
+        gauge_chunks[2],
+    );
 
-    // ── Shortcuts ─────────────────────────────────────────────
-    let shortcut_rows = vec![
+    // ── Shortcuts ──
+    let sparkle = SPARKLES[app.tick as usize % SPARKLES.len()];
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(format!("{sparkle}─── 快捷键 ───{sparkle}"), Style::default().fg(OVERLAY)))
+            .alignment(Alignment::Center),
+        Line::from(""),
         shortcut_row("1 / Tab", "Home", LAVENDER),
         shortcut_row("2", "Skills 管理", SAPPHIRE),
         shortcut_row("3", "Sync 同步", TEAL),
-        shortcut_row("q / Ctrl+C", "退出", RED),
+        shortcut_row("q", "退出", RED),
+    ];
+    f.render_widget(
+        Paragraph::new(Text::from(lines)).alignment(Alignment::Center).wrap(Wrap { trim: true }),
+        chunks[3],
+    );
+}
+
+/// Draw animated sine waves on ratatui Canvas
+fn draw_wave_canvas(f: &mut Frame, app: &App, area: Rect) {
+    let t = app.tick as f64 * 0.06;
+
+    // Pre-compute all wave data so datasets can reference it
+    let wave_colors = [LAVENDER, SAPPHIRE, TEAL];
+    let wave_data: Vec<Vec<(f64, f64)>> = (0..3)
+        .map(|layer| {
+            let freq = 0.3 + layer as f64 * 0.15;
+            let amp = 0.8 - layer as f64 * 0.2;
+            let speed = t + layer as f64 * 1.2;
+            (0..80)
+                .map(|i| {
+                    let x = i as f64 / 79.0 * 4.0 * std::f64::consts::PI;
+                    let y = amp * (x * freq + speed).sin();
+                    (x, y)
+                })
+                .collect()
+        })
+        .collect();
+
+    let datasets: Vec<Dataset<'_>> = wave_data
+        .iter()
+        .enumerate()
+        .map(|(layer, points)| {
+            Dataset::default()
+                .name(if layer == 0 { "λ" } else if layer == 1 { "ω" } else { "φ" })
+                .data(points)
+                .graph_type(GraphType::Line)
+                .style(Style::default().fg(wave_colors[layer]))
+        })
+        .collect();
+
+    let x_labels = vec![
+        Span::styled("0", Style::default().fg(OVERLAY)),
+        Span::styled("2π", Style::default().fg(OVERLAY)),
+        Span::styled("4π", Style::default().fg(OVERLAY)),
     ];
 
-    let mut lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "─── 快捷键 ───",
-            Style::default().fg(OVERLAY),
-        ))
-        .alignment(Alignment::Center),
-        Line::from(""),
-    ];
-    for row in shortcut_rows {
-        lines.push(row);
-    }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::raw(&app.hello_message)));
+    let chart = Chart::new(datasets)
+        .x_axis(
+            Axis::default()
+                .style(Style::default().fg(OVERLAY))
+                .bounds([0.0, 4.0 * std::f64::consts::PI])
+                .labels(x_labels),
+        )
+        .y_axis(
+            Axis::default()
+                .style(Style::default().fg(OVERLAY))
+                .bounds([-1.2, 1.2])
+                .labels(vec![
+                    Span::styled("-1", Style::default().fg(OVERLAY)),
+                    Span::styled("0", Style::default().fg(OVERLAY)),
+                    Span::styled("+1", Style::default().fg(OVERLAY)),
+                ]),
+        )
+        .legend_position(Some(ratatui::widgets::LegendPosition::TopRight))
+        .hidden_legend_constraints((Constraint::Min(0), Constraint::Min(0)));
 
-    let para = Paragraph::new(Text::from(lines))
-        .alignment(Alignment::Center)
-        .wrap(Wrap { trim: true });
-    f.render_widget(para, chunks[3]);
+    f.render_widget(chart.style(Style::default().bg(BG)), area);
 }
 
 fn shortcut_row(key: &str, desc: &str, color: Color) -> Line<'static> {
     Line::from(vec![
-        Span::styled(
-            format!(" {key:^12} ", key = key),
-            Style::default().fg(BG).bg(color).bold(),
-        ),
+        Span::styled(format!(" {key:^12} ", key = key), Style::default().fg(BG).bg(color).bold()),
         Span::styled(" → ", Style::default().fg(OVERLAY)),
-        Span::styled(format!("{desc}"), Style::default().fg(TEXT)),
+        Span::styled(desc.to_string(), Style::default().fg(TEXT)),
     ])
 }
 
 // ── Skills tab ────────────────────────────────────────────────────
 
 fn draw_skills(f: &mut Frame, app: &App, area: Rect) {
-    let constraints = if app.show_skill_detail && !app.skill_entries.is_empty() {
+    if app.skill_entries.is_empty() {
+        draw_skill_empty(f, app, area);
+        return;
+    }
+
+    let constraints = if app.show_skill_detail {
         vec![Constraint::Percentage(55), Constraint::Percentage(45)]
     } else {
         vec![Constraint::Percentage(100)]
@@ -319,9 +323,57 @@ fn draw_skills(f: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     draw_skill_table(f, app, chunks[0]);
-    if app.show_skill_detail && !app.skill_entries.is_empty() && chunks.len() > 1 {
+    if app.show_skill_detail && chunks.len() > 1 {
         draw_skill_detail(f, app, chunks[1]);
     }
+}
+
+/// Animated skeleton loading for empty skills
+fn draw_skill_empty(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title(Span::styled(" ⚡ Skills ", Style::default().fg(SAPPHIRE).bold()))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(OVERLAY))
+        .style(Style::default().bg(BG));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let frame = (app.tick / 4) as usize % SKELETON_CHARS.len();
+    let ch = SKELETON_CHARS[frame];
+    let shimmer_color = match frame {
+        0 => OVERLAY,
+        1 => SURFACE,
+        2 => SUBTEXT,
+        _ => SURFACE,
+    };
+
+    let lines: Vec<Line> = (0..inner.height)
+        .map(|row| {
+            if row == inner.height / 2 - 2 {
+                Line::from(Span::styled(
+                    "  还没有任何 Skill",
+                    Style::default().fg(TEXT).bold(),
+                ))
+                .alignment(Alignment::Center)
+            } else if row == inner.height / 2 - 1 {
+                Line::from(Span::styled(
+                    "  按 a 添加本地 / g 从 GitHub 添加",
+                    Style::default().fg(SUBTEXT),
+                ))
+                .alignment(Alignment::Center)
+            } else if row == inner.height / 2 {
+                Line::from("")
+            } else {
+                // Skeleton shimmer lines
+                let width = inner.width as usize;
+                let line_ch = ch.repeat(width);
+                Line::from(Span::styled(line_ch, Style::default().fg(shimmer_color)))
+            }
+        })
+        .collect();
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
 fn draw_skill_table(f: &mut Frame, app: &App, area: Rect) {
@@ -343,49 +395,32 @@ fn draw_skill_table(f: &mut Frame, app: &App, area: Rect) {
         .map(|(i, entry)| {
             let is_selected = i == app.skill_selected;
             let is_even = i % 2 == 0;
-
+            let status_color = if entry.installed.enabled { GREEN } else { RED };
             let status_icon = if entry.installed.enabled { "●" } else { "○" };
             let status_text = if entry.installed.enabled { "启用" } else { "停用" };
-            let status_color = if entry.installed.enabled { GREEN } else { RED };
 
-            // Source badge styling
             let (source_text, source_style) = if entry.installed.source.starts_with("github:") {
                 let repo = entry.installed.source.replacen("github:", "", 1);
-                (repo, Style::default().fg(BG).bg(SAPPHIRE))
+                (format!(" ⎇ {repo} "), Style::default().fg(BG).bg(SAPPHIRE))
             } else {
-                (entry.installed.source.clone(), Style::default().fg(SUBTEXT))
+                (format!(" {} ", entry.installed.source), Style::default().fg(SUBTEXT))
             };
 
-            let row_bg = if is_selected {
-                BLUE
-            } else if is_even {
-                SURFACE
-            } else {
-                BG
-            };
+            let row_bg = if is_selected { BLUE } else if is_even { SURFACE } else { BG };
             let row_fg = if is_selected { BG } else { TEXT };
 
             Row::new(vec![
-                Cell::from(Span::styled(
-                    format!("{}", i + 1),
-                    Style::default().fg(if is_selected { BG } else { SUBTEXT }),
-                )),
-                Cell::from(Span::styled(
-                    entry.skill.name.clone(),
-                    Style::default().fg(if is_selected { BG } else { LAVENDER }).bold(),
-                )),
+                Cell::from(Span::styled(format!("{}", i + 1), Style::default().fg(if is_selected { BG } else { SUBTEXT }))),
+                Cell::from(Span::styled(entry.skill.name.clone(), Style::default().fg(if is_selected { BG } else { LAVENDER }).bold())),
                 Cell::from(Line::from(vec![
                     Span::styled(status_icon, Style::default().fg(status_color)),
                     Span::styled(format!(" {status_text}"), Style::default().fg(if is_selected { BG } else { status_color })),
                 ])),
-                Cell::from(Span::styled(format!(" {source_text} "), source_style)),
+                Cell::from(Span::styled(source_text, source_style)),
             ])
-            .style(
-                Style::default()
-                    .fg(row_fg)
-                    .bg(row_bg)
-                    .add_modifier(if is_selected { Modifier::BOLD } else { Modifier::empty() }),
-            )
+            .style(Style::default()
+                .fg(row_fg).bg(row_bg)
+                .add_modifier(if is_selected { Modifier::BOLD } else { Modifier::empty() }))
             .height(1)
         })
         .collect();
@@ -412,16 +447,15 @@ fn draw_skill_table(f: &mut Frame, app: &App, area: Rect) {
 
     // Animated scrollbar
     if !app.skill_entries.is_empty() {
-        let thumb_color_idx = app.tick as usize % 5;
+        let thumb_idx = app.tick as usize % 5;
         let thumb_colors = [LAVENDER, MAUVE, BLUE, SAPPHIRE, PINK];
         let scrollbar = Scrollbar::default()
             .orientation(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::default().fg(thumb_colors[thumb_color_idx]))
+            .thumb_style(Style::default().fg(thumb_colors[thumb_idx]))
             .track_style(Style::default().fg(OVERLAY))
             .begin_symbol(Some("▲"))
             .end_symbol(Some("▼"));
-        let mut state = ScrollbarState::new(app.skill_entries.len())
-            .position(app.skill_selected);
+        let mut state = ScrollbarState::new(app.skill_entries.len()).position(app.skill_selected);
         f.render_stateful_widget(
             scrollbar,
             area.inner(Margin { horizontal: 0, vertical: 1 }),
@@ -429,39 +463,29 @@ fn draw_skill_table(f: &mut Frame, app: &App, area: Rect) {
         );
     }
 
-    // Help footer with keyboard badge style
-    let help_height = 2;
-    if area.height > help_height + 4 {
+    // Help footer with key badges
+    let help_h = 2;
+    if area.height > help_h + 4 {
         let help_area = Rect {
             x: area.x + 1,
-            y: area.y + area.height - help_height - 1,
+            y: area.y + area.height - help_h - 1,
             width: area.width - 2,
-            height: help_height,
+            height: help_h,
         };
         let help = Paragraph::new(Text::from(vec![
             Line::from(vec![
-                key_badge("a", GREEN),
-                Span::styled(" 添加 ", Style::default().fg(SUBTEXT)),
-                key_badge("g", SAPPHIRE),
-                Span::styled(" GitHub ", Style::default().fg(SUBTEXT)),
-                key_badge("e", TEAL),
-                Span::styled(" 启用 ", Style::default().fg(SUBTEXT)),
-                key_badge("d", PEACH),
-                Span::styled(" 停用 ", Style::default().fg(SUBTEXT)),
-                key_badge("x", RED),
-                Span::styled(" 删除 ", Style::default().fg(SUBTEXT)),
+                key_badge("a", GREEN), Span::styled(" 添加 ", Style::default().fg(SUBTEXT)),
+                key_badge("g", SAPPHIRE), Span::styled(" GitHub ", Style::default().fg(SUBTEXT)),
+                key_badge("e", TEAL), Span::styled(" 启用 ", Style::default().fg(SUBTEXT)),
+                key_badge("d", PEACH), Span::styled(" 停用 ", Style::default().fg(SUBTEXT)),
+                key_badge("x", RED), Span::styled(" 删除 ", Style::default().fg(SUBTEXT)),
             ]),
             Line::from(vec![
-                key_badge("v", YELLOW),
-                Span::styled(" 查看 ", Style::default().fg(SUBTEXT)),
-                key_badge("r", LAVENDER),
-                Span::styled(" 刷新 ", Style::default().fg(SUBTEXT)),
-                key_badge("R", LAVENDER),
-                Span::styled(" 重扫描 ", Style::default().fg(SUBTEXT)),
-                key_badge("D", PINK),
-                Span::styled(" Doctor ", Style::default().fg(SUBTEXT)),
-                key_badge("Spc", MAUVE),
-                Span::styled(" 详情", Style::default().fg(SUBTEXT)),
+                key_badge("v", YELLOW), Span::styled(" 查看 ", Style::default().fg(SUBTEXT)),
+                key_badge("r", LAVENDER), Span::styled(" 刷新 ", Style::default().fg(SUBTEXT)),
+                key_badge("R", LAVENDER), Span::styled(" 重扫描 ", Style::default().fg(SUBTEXT)),
+                key_badge("D", PINK), Span::styled(" Doctor ", Style::default().fg(SUBTEXT)),
+                key_badge("Spc", MAUVE), Span::styled(" 详情", Style::default().fg(SUBTEXT)),
             ]),
         ]))
         .style(Style::default().bg(BG));
@@ -485,11 +509,9 @@ fn draw_skill_detail(f: &mut Frame, app: &App, area: Rect) {
     let text = if let Some(entry) = app.selected_skill() {
         let status_color = if entry.installed.enabled { GREEN } else { RED };
         let status_icon = if entry.installed.enabled { "●" } else { "○" };
-        let status_text = if entry.installed.enabled { "已启用" } else { "已停用" };
 
         let mut lines = vec![
             Line::from(""),
-            // Name header
             Line::from(vec![
                 Span::styled("  ", Style::default()),
                 Span::styled(&entry.skill.name, Style::default().fg(LAVENDER).bold().add_modifier(Modifier::ITALIC)),
@@ -499,33 +521,30 @@ fn draw_skill_detail(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(&entry.skill.id, Style::default().fg(SUBTEXT)),
             ]),
             Line::from(""),
-            // Instance section
             section_header("实例", SAPPHIRE),
             field_row("ID", &entry.installed.instance_id, SUBTEXT),
             field_row("目录", &entry.installed.dir_name, SUBTEXT),
             field_row("路径", &entry.installed.install_path, SUBTEXT),
-            // Source badge
             Line::from(vec![
                 Span::styled("  来源 ", Style::default().fg(YELLOW)),
                 Span::styled("│ ", Style::default().fg(OVERLAY)),
                 if entry.installed.source.starts_with("github:") {
                     Span::styled(
-                        format!(" {} ", entry.installed.source.replacen("github:", "⎇ ", 1)),
+                        format!(" ⎇ {} ", entry.installed.source.replacen("github:", "", 1)),
                         Style::default().fg(BG).bg(SAPPHIRE),
                     )
                 } else {
-                    Span::styled(
-                        format!(" {} ", entry.installed.source),
-                        Style::default().fg(TEXT),
-                    )
+                    Span::styled(format!(" {} ", entry.installed.source), Style::default().fg(TEXT))
                 },
             ]),
-            // Status
             Line::from(vec![
                 Span::styled("  状态 ", Style::default().fg(YELLOW)),
                 Span::styled("│ ", Style::default().fg(OVERLAY)),
                 Span::styled(status_icon, Style::default().fg(status_color)),
-                Span::styled(format!(" {status_text}"), Style::default().fg(status_color).bold()),
+                Span::styled(
+                    format!(" {}", if entry.installed.enabled { "已启用" } else { "已停用" }),
+                    Style::default().fg(status_color).bold(),
+                ),
             ]),
             field_row("创建", &entry.installed.created_at, SUBTEXT),
             field_row("更新", &entry.installed.updated_at, SUBTEXT),
@@ -544,10 +563,7 @@ fn draw_skill_detail(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled("│ ", Style::default().fg(OVERLAY)),
             ]));
             let domains: Vec<Span> = entry.skill.domains.iter().flat_map(|d| {
-                vec![
-                    Span::styled(format!(" {d} "), Style::default().fg(BG).bg(MAUVE)),
-                    Span::raw(" "),
-                ]
+                vec![Span::styled(format!(" {d} "), Style::default().fg(BG).bg(MAUVE)), Span::raw(" ")]
             }).collect();
             lines.push(Line::from(domains));
         }
@@ -559,10 +575,7 @@ fn draw_skill_detail(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled("│ ", Style::default().fg(OVERLAY)),
             ]));
             let modules: Vec<Span> = entry.skill.modules.iter().flat_map(|m| {
-                vec![
-                    Span::styled(format!(" {m} "), Style::default().fg(BG).bg(TEAL)),
-                    Span::raw(" "),
-                ]
+                vec![Span::styled(format!(" {m} "), Style::default().fg(BG).bg(TEAL)), Span::raw(" ")]
             }).collect();
             lines.push(Line::from(modules));
         }
@@ -575,8 +588,7 @@ fn draw_skill_detail(f: &mut Frame, app: &App, area: Rect) {
         ])
     };
 
-    let para = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
-    f.render_widget(para, area);
+    f.render_widget(Paragraph::new(text).block(block).wrap(Wrap { trim: true }), area);
 }
 
 fn section_header(label: &str, color: Color) -> Line<'static> {
@@ -605,18 +617,13 @@ fn draw_sync(f: &mut Frame, app: &App, area: Rect) {
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(OVERLAY))
         .style(Style::default().bg(BG));
-
     let inner = block.inner(area);
     f.render_widget(block, area);
 
     let text = if let Some(remote) = &app.sync_config {
         let mut lines = vec![
             Line::from(""),
-            Line::from(Span::styled(
-                "─── 同步配置 ───",
-                Style::default().fg(MAUVE).bold(),
-            ))
-            .alignment(Alignment::Center),
+            Line::from(Span::styled("─── 同步配置 ───", Style::default().fg(MAUVE).bold())).alignment(Alignment::Center),
         ];
 
         match remote {
@@ -644,13 +651,7 @@ fn draw_sync(f: &mut Frame, app: &App, area: Rect) {
         }
 
         lines.push(Line::from(""));
-        lines.push(
-            Line::from(Span::styled(
-                "─── 快捷键 ───",
-                Style::default().fg(MAUVE),
-            ))
-            .alignment(Alignment::Center),
-        );
+        lines.push(Line::from(Span::styled("─── 快捷键 ───", Style::default().fg(MAUVE))).alignment(Alignment::Center));
         lines.push(Line::from(""));
         lines.push(shortcut_row("t", "测试连通性", TEAL));
         lines.push(shortcut_row("p", "从远端拉取 (pull)", SAPPHIRE));
@@ -661,34 +662,23 @@ fn draw_sync(f: &mut Frame, app: &App, area: Rect) {
     } else {
         Text::from(vec![
             Line::from(""),
-            Line::from(Span::styled(
-                "未配置同步远端",
-                Style::default().fg(SUBTEXT).italic(),
-            ))
-            .alignment(Alignment::Center),
+            Line::from(Span::styled("未配置同步远端", Style::default().fg(SUBTEXT).italic())).alignment(Alignment::Center),
             Line::from(""),
-            Line::from(Span::styled(
-                "请使用命令行配置:",
-                Style::default().fg(TEXT),
-            ))
-            .alignment(Alignment::Center),
+            Line::from(Span::styled("请使用命令行配置:", Style::default().fg(TEXT))).alignment(Alignment::Center),
             Line::from(""),
             Line::from(vec![
                 Span::styled("  byi sync init ", Style::default().fg(SAPPHIRE).bold()),
                 Span::styled("--provider github --repo owner/repo", Style::default().fg(SUBTEXT)),
-            ])
-            .alignment(Alignment::Center),
+            ]).alignment(Alignment::Center),
             Line::from(""),
             Line::from(vec![
                 Span::styled("  byi sync init ", Style::default().fg(TEAL).bold()),
                 Span::styled("--provider webdav --preset jianguoyun", Style::default().fg(SUBTEXT)),
-            ])
-            .alignment(Alignment::Center),
+            ]).alignment(Alignment::Center),
         ])
     };
 
-    let para = Paragraph::new(text).wrap(Wrap { trim: true });
-    f.render_widget(para, inner);
+    f.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }), inner);
 }
 
 fn sync_field(label: &str, value: &str, color: Color) -> Line<'static> {
@@ -699,67 +689,45 @@ fn sync_field(label: &str, value: &str, color: Color) -> Line<'static> {
     ])
 }
 
-// ── Popups with shadow and animated cursor ────────────────────────
+// ── Popups ────────────────────────────────────────────────────────
 
-fn draw_popup(f: &mut Frame, _app: &App, popup: &Popup) {
+fn draw_popup(f: &mut Frame, app: &App, popup: &Popup) {
     let area = centered_rect(60, 40, f.area());
 
-    // Shadow effect — render dark block offset by (1,1)
-    let shadow_area = Rect {
-        x: area.x + 1,
-        y: area.y + 1,
-        width: area.width,
-        height: area.height,
-    };
-    f.render_widget(Clear, shadow_area);
-    f.render_widget(
-        Block::default().style(Style::default().bg(Color::Rgb(10, 10, 15))),
-        shadow_area,
-    );
-
-    // Clear popup area
+    // Shadow
+    let shadow = Rect { x: area.x + 1, y: area.y + 1, width: area.width, height: area.height };
+    f.render_widget(Clear, shadow);
+    f.render_widget(Block::default().style(Style::default().bg(Color::Rgb(10, 10, 15))), shadow);
     f.render_widget(Clear, area);
 
     match popup {
         Popup::Message { title, body } => {
             let block = Block::default()
-                .title(Span::styled(
-                    format!(" ◈ {title} "),
-                    Style::default().fg(MAUVE).bold(),
-                ))
+                .title(Span::styled(format!(" ◈ {title} "), Style::default().fg(MAUVE).bold()))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(LAVENDER))
                 .style(Style::default().bg(SURFACE));
 
-            let mut body_lines: Vec<Line> =
-                body.lines().map(|l| Line::from(Span::styled(l, Style::default().fg(TEXT)))).collect();
+            let mut body_lines: Vec<Line> = body.lines()
+                .map(|l| Line::from(Span::styled(l, Style::default().fg(TEXT))))
+                .collect();
             body_lines.push(Line::from(""));
-            body_lines.push(
-                Line::from(vec![
-                    key_badge("Enter", LAVENDER),
-                    Span::styled(" 关闭", Style::default().fg(SUBTEXT)),
-                ])
-                .alignment(Alignment::Center),
-            );
+            body_lines.push(Line::from(vec![
+                key_badge("Enter", LAVENDER),
+                Span::styled(" 关闭", Style::default().fg(SUBTEXT)),
+            ]).alignment(Alignment::Center));
 
-            f.render_widget(
-                Paragraph::new(Text::from(body_lines)).block(block).wrap(Wrap { trim: true }),
-                area,
-            );
+            f.render_widget(Paragraph::new(Text::from(body_lines)).block(block).wrap(Wrap { trim: true }), area);
         }
 
         Popup::Input { title, value, action: _ } => {
             let block = Block::default()
-                .title(Span::styled(
-                    format!(" → {title} "),
-                    Style::default().fg(SAPPHIRE).bold(),
-                ))
+                .title(Span::styled(format!(" → {title} "), Style::default().fg(SAPPHIRE).bold()))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(SAPPHIRE))
                 .style(Style::default().bg(SURFACE));
-
             let inner = block.inner(area);
             f.render_widget(block, area);
 
@@ -773,82 +741,50 @@ fn draw_popup(f: &mut Frame, _app: &App, popup: &Popup) {
                 ])
                 .split(inner);
 
-            // Animated cursor blink
-            let cursor_visible = (_app.tick / 2) % 2 == 0;
+            let cursor_on = (app.tick / 4) % 2 == 0;
             let input_line = if value.is_empty() {
                 vec![
                     Span::styled(" ", Style::default()),
-                    if cursor_visible {
-                        Span::styled("▎", Style::default().fg(SAPPHIRE))
-                    } else {
-                        Span::styled(" ", Style::default())
-                    },
+                    if cursor_on { Span::styled("▎", Style::default().fg(SAPPHIRE)) } else { Span::styled(" ", Style::default()) },
                     Span::styled(" 输入路径...", Style::default().fg(OVERLAY)),
                 ]
             } else {
                 vec![
                     Span::styled(" ", Style::default()),
                     Span::styled(value.clone(), Style::default().fg(TEXT).bold()),
-                    if cursor_visible {
-                        Span::styled("▎", Style::default().fg(SAPPHIRE))
-                    } else {
-                        Span::styled(" ", Style::default().fg(SAPPHIRE))
-                    },
+                    if cursor_on { Span::styled("▎", Style::default().fg(SAPPHIRE)) } else { Span::styled(" ", Style::default().fg(SAPPHIRE)) },
                 ]
             };
-            // Input field background
             let input_bg = Block::default().style(Style::default().bg(BG));
             let input_inner = input_bg.inner(input_chunks[1]);
             f.render_widget(input_bg, input_chunks[1]);
-            f.render_widget(
-                Paragraph::new(Line::from(input_line)),
-                input_inner,
-            );
+            f.render_widget(Paragraph::new(Line::from(input_line)), input_inner);
 
-            // Footer hint
             let hint = Line::from(vec![
-                key_badge("Enter", GREEN),
-                Span::styled(" 确认  ", Style::default().fg(SUBTEXT)),
-                key_badge("Esc", RED),
-                Span::styled(" 取消", Style::default().fg(SUBTEXT)),
-            ])
-            .alignment(Alignment::Center);
-            f.render_widget(
-                Paragraph::new(hint).style(Style::default().bg(SURFACE)),
-                input_chunks[2],
-            );
+                key_badge("Enter", GREEN), Span::styled(" 确认  ", Style::default().fg(SUBTEXT)),
+                key_badge("Esc", RED), Span::styled(" 取消", Style::default().fg(SUBTEXT)),
+            ]).alignment(Alignment::Center);
+            f.render_widget(Paragraph::new(hint).style(Style::default().bg(SURFACE)), input_chunks[2]);
         }
 
         Popup::Confirm { title, body, action: _ } => {
             let block = Block::default()
-                .title(Span::styled(
-                    format!(" ⚠ {title} "),
-                    Style::default().fg(PEACH).bold(),
-                ))
+                .title(Span::styled(format!(" ⚠ {title} "), Style::default().fg(PEACH).bold()))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(PEACH))
                 .style(Style::default().bg(SURFACE));
 
-            let mut lines: Vec<Line> = body
-                .lines()
+            let mut lines: Vec<Line> = body.lines()
                 .map(|l| Line::from(Span::styled(l, Style::default().fg(TEXT))))
                 .collect();
             lines.push(Line::from(""));
-            lines.push(
-                Line::from(vec![
-                    key_badge("Y/Enter", RED),
-                    Span::styled(" 确认  ", Style::default().fg(SUBTEXT)),
-                    key_badge("其他键", OVERLAY),
-                    Span::styled(" 取消", Style::default().fg(SUBTEXT)),
-                ])
-                .alignment(Alignment::Center),
-            );
+            lines.push(Line::from(vec![
+                key_badge("Y/Enter", RED), Span::styled(" 确认  ", Style::default().fg(SUBTEXT)),
+                key_badge("其他键", OVERLAY), Span::styled(" 取消", Style::default().fg(SUBTEXT)),
+            ]).alignment(Alignment::Center));
 
-            f.render_widget(
-                Paragraph::new(Text::from(lines)).block(block).wrap(Wrap { trim: true }),
-                area,
-            );
+            f.render_widget(Paragraph::new(Text::from(lines)).block(block).wrap(Wrap { trim: true }), area);
         }
     }
 }

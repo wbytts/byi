@@ -461,6 +461,41 @@ impl App {
     pub fn selected_skill(&self) -> Option<&SkillEntry> {
         self.skill_entries.get(self.skill_selected)
     }
+
+    pub fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) {
+        use crossterm::event::{MouseEventKind, MouseButton};
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                // Row 0-2 = tabs area, detect click position
+                if mouse.row <= 2 {
+                    // Approximate tab positions: each tab ~12 chars wide
+                    let col = mouse.column;
+                    if col < 12 {
+                        self.current_tab = Tab::Home;
+                    } else if col < 24 {
+                        self.current_tab = Tab::Skills;
+                    } else if col < 36 {
+                        self.current_tab = Tab::Sync;
+                    }
+                }
+                // Scroll on content area
+            }
+            MouseEventKind::ScrollUp => {
+                if self.current_tab == Tab::Skills && self.skill_selected > 0 {
+                    self.skill_selected -= 1;
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                if self.current_tab == Tab::Skills
+                    && !self.skill_entries.is_empty()
+                    && self.skill_selected < self.skill_entries.len() - 1
+                {
+                    self.skill_selected += 1;
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]

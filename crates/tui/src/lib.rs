@@ -51,7 +51,7 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut app::App) -> Result<(), String> {
     let mut last_tick = std::time::Instant::now();
-    let tick_rate = std::time::Duration::from_millis(250);
+    let tick_rate = std::time::Duration::from_millis(60); // ~16fps for smooth animation
 
     loop {
         terminal
@@ -63,10 +63,16 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut app::App) -> Result
             .unwrap_or_else(|| std::time::Duration::from_secs(0));
 
         if crossterm::event::poll(timeout).map_err(|e| format!("事件轮询失败: {e}"))? {
-            if let Event::Key(key) = event::read().map_err(|e| format!("读取事件失败: {e}"))? {
-                if app.handle_key(key.code, key.modifiers) {
-                    return Ok(());
+            match event::read().map_err(|e| format!("读取事件失败: {e}"))? {
+                Event::Key(key) => {
+                    if app.handle_key(key.code, key.modifiers) {
+                        return Ok(());
+                    }
                 }
+                Event::Mouse(mouse) => {
+                    app.handle_mouse(mouse);
+                }
+                _ => {}
             }
         }
 
