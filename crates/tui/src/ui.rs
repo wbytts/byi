@@ -35,6 +35,35 @@ const SPARKLES: &[&str] = &["✦", "✧", "⋆", "★", "✶", "✴", "✳", "�
 const THROBBER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SKELETON_CHARS: &[&str] = &["░", "▒", "▓", "▒"];
 
+
+/// Generate a "breathing" border color that oscillates between overlay and the given accent
+fn glow_color(tick: u64, accent: Color, speed: u64) -> Color {
+    let phase = (tick % (speed * 2)) as f64 / (speed * 2) as f64;
+    let alpha = (phase * std::f64::consts::PI).sin() * 0.5 + 0.5; // 0..1
+    let accent_rgb = match accent {
+        Color::Rgb(_, g, b) => (g, b),
+        _ => return accent,
+    };
+    let base = match OVERLAY { Color::Rgb(r, g, b) => (r, g, b), _ => (49, 50, 68) };
+    let accent_r = match accent { Color::Rgb(r, _, _) => r, _ => 100 };
+    let r = (base.0 as f64 + (accent_r as f64 - base.0 as f64) * alpha) as u8;
+    let g = (base.1 as f64 + (accent_rgb.0 as f64 - base.1 as f64) * alpha) as u8;
+    let b = (base.2 as f64 + (accent_rgb.1 as f64 - base.2 as f64) * alpha) as u8;
+    Color::Rgb(r, g, b)
+}
+
+/// Unicode decorative divider line
+fn decorative_divider(width: u16, tick: u64) -> Line<'static> {
+    let sparkle = SPARKLES[tick as usize % SPARKLES.len()];
+    let dash_count = (width as usize).saturating_sub(4) / 2;
+    let left = "─".repeat(dash_count);
+    let right = "─".repeat(dash_count);
+    Line::from(vec![
+        Span::styled(left, Style::default().fg(OVERLAY)),
+        Span::styled(sparkle, Style::default().fg(MAUVE)),
+        Span::styled(right, Style::default().fg(OVERLAY)),
+    ])
+}
 // ── Main draw ─────────────────────────────────────────────────────
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -110,7 +139,7 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
                 .title_alignment(Alignment::Left)
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(OVERLAY))
+                .border_style(Style::default().fg(glow_color(app.tick, tab_colors[tab_index], 50)))
                 .style(Style::default().bg(BG)),
         )
         .select(tab_index)
@@ -137,7 +166,7 @@ fn draw_home(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(OVERLAY))
+        .border_style(Style::default().fg(glow_color(app.tick, LAVENDER, 80)))
         .style(Style::default().bg(BG));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -217,16 +246,18 @@ fn draw_home(f: &mut Frame, app: &App, area: Rect) {
     );
 
     // ── Shortcuts ──
-    let sparkle = SPARKLES[app.tick as usize % SPARKLES.len()];
     let lines = vec![
         Line::from(""),
-        Line::from(Span::styled(format!("{sparkle}─── 快捷键 ───{sparkle}"), Style::default().fg(OVERLAY)))
-            .alignment(Alignment::Center),
+        decorative_divider(chunks[3].width, app.tick),
+        Line::from(vec![
+            Span::styled("  ⌨ ", Style::default().fg(MAUVE)),
+            Span::styled("快 捷 键", Style::default().fg(TEXT).bold()),
+        ]).alignment(Alignment::Center),
         Line::from(""),
         shortcut_row("1 / Tab", "Home", LAVENDER),
         shortcut_row("2", "Skills 管理", SAPPHIRE),
         shortcut_row("3", "Sync 同步", TEAL),
-        shortcut_row("q", "退出", RED),
+        shortcut_row("q / Ctrl+C", "退出", RED),
     ];
     f.render_widget(
         Paragraph::new(Text::from(lines)).alignment(Alignment::Center).wrap(Wrap { trim: true }),
@@ -334,7 +365,7 @@ fn draw_skill_empty(f: &mut Frame, app: &App, area: Rect) {
         .title(Span::styled(" ⚡ Skills ", Style::default().fg(SAPPHIRE).bold()))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(OVERLAY))
+        .border_style(Style::default().fg(glow_color(app.tick, SAPPHIRE, 60)))
         .style(Style::default().bg(BG));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -438,7 +469,7 @@ fn draw_skill_table(f: &mut Frame, app: &App, area: Rect) {
             .title_alignment(Alignment::Left)
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(OVERLAY))
+            .border_style(Style::default().fg(glow_color(app.tick, SAPPHIRE, 70)))
             .style(Style::default().bg(BG)),
     )
     .row_highlight_style(Style::default().bg(BLUE).fg(BG));
@@ -503,7 +534,7 @@ fn draw_skill_detail(f: &mut Frame, app: &App, area: Rect) {
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(OVERLAY))
+        .border_style(Style::default().fg(glow_color(app.tick, TEAL, 90)))
         .style(Style::default().bg(BG));
 
     let text = if let Some(entry) = app.selected_skill() {
@@ -615,7 +646,7 @@ fn draw_sync(f: &mut Frame, app: &App, area: Rect) {
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(OVERLAY))
+        .border_style(Style::default().fg(glow_color(app.tick, TEAL, 75)))
         .style(Style::default().bg(BG));
     let inner = block.inner(area);
     f.render_widget(block, area);
