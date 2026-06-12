@@ -6,7 +6,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum, error::ErrorKind};
     version,
     disable_help_subcommand = true,
     color = clap::ColorChoice::Never,
-    after_help = "Examples:\n  byi web\n  byi sync config\n  byi sync init --provider github --repo owner/repo --branch main --base-path .byi\n  byi sync init --provider webdav --preset jianguoyun --username name@example.com --base-path .byi\n  byi sync init --provider webdav --preset custom --url https://example.com/dav/ --username name --base-path .byi\n  byi sync status\n  byi sync test\n  byi sync pull\n  byi sync push"
+    after_help = "Examples:\n  byi sync config\n  byi sync init --provider github --repo owner/repo --branch main --base-path .byi\n  byi sync init --provider webdav --preset jianguoyun --username name@example.com --base-path .byi\n  byi sync init --provider webdav --preset custom --url https://example.com/dav/ --username name --base-path .byi\n  byi sync status\n  byi sync test\n  byi sync pull\n  byi sync push"
 )]
 pub(crate) struct Cli {
     #[command(subcommand)]
@@ -25,21 +25,19 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: Option<SyncCommand>,
     },
-    #[command(about = "启动本地 Web 控制台")]
-    Web(WebCommand),
+    #[command(
+        about = "管理本地 skill",
+        visible_alias = "skills",
+        after_help = "Examples:\n  byi skill add ./my-skill\n  byi skill add --github owner/repo --ref main --subdir skills/review\n  byi skill list --long\n  byi skill view python-review\n  byi skill edit inst_123\n  byi skill remove inst_123\n  byi skill enable inst_123\n  byi skill disable inst_123\n  byi skill instances --json\n  byi skill doctor\n  byi skill rescan"
+    )]
+    Skill {
+        #[command(subcommand)]
+        command: Option<SkillCommand>,
+    },
+    #[command(about = "打开 TUI 界面")]
+    Tui,
 }
 
-#[derive(Clone, Debug, Args)]
-pub(crate) struct WebCommand {
-    #[arg(long, default_value = "127.0.0.1")]
-    pub(crate) host: String,
-    #[arg(long, default_value_t = 3768)]
-    pub(crate) port: u16,
-    #[arg(long)]
-    pub(crate) frontend_dir: Option<std::path::PathBuf>,
-    #[arg(long)]
-    pub(crate) no_build: bool,
-}
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum SyncCommand {
@@ -55,6 +53,82 @@ pub(crate) enum SyncCommand {
     Pull,
     #[command(about = "将本地数据推送到当前同步远端")]
     Push,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SkillCommand {
+    #[command(about = "添加本地或 GitHub skill")]
+    Add(SkillAddCommand),
+    #[command(about = "列出当前 skill 实例", visible_alias = "ls")]
+    List(SkillListCommand),
+    #[command(about = "查看 skill 详情")]
+    View(SkillViewCommand),
+    #[command(about = "编辑 skill 元数据")]
+    Edit(SkillEditCommand),
+    #[command(about = "删除某个本地实例", visible_alias = "rm")]
+    Remove(SkillInstanceCommand),
+    #[command(about = "启用某个实例")]
+    Enable(SkillInstanceCommand),
+    #[command(about = "停用某个实例")]
+    Disable(SkillInstanceCommand),
+    #[command(about = "查看实例级别详情")]
+    Instances(SkillInstancesCommand),
+    #[command(about = "检查 skill 管理状态")]
+    Doctor(SkillFormatCommand),
+    #[command(about = "重新扫描并修正 skill 注册表")]
+    Rescan(SkillFormatCommand),
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SkillAddCommand {
+    pub(crate) path: Option<String>,
+    #[arg(long)]
+    pub(crate) github: Option<String>,
+    #[arg(long)]
+    pub(crate) r#ref: Option<String>,
+    #[arg(long)]
+    pub(crate) subdir: Option<String>,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SkillListCommand {
+    #[command(flatten)]
+    pub(crate) format: SkillFormatCommand,
+    #[arg(long)]
+    pub(crate) enabled: bool,
+    #[arg(long)]
+    pub(crate) disabled: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SkillViewCommand {
+    pub(crate) reference: String,
+    #[command(flatten)]
+    pub(crate) format: SkillFormatCommand,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SkillEditCommand {
+    pub(crate) reference: String,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SkillInstanceCommand {
+    pub(crate) instance_id: String,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SkillInstancesCommand {
+    #[command(flatten)]
+    pub(crate) format: SkillFormatCommand,
+}
+
+#[derive(Clone, Debug, Args, Default)]
+pub(crate) struct SkillFormatCommand {
+    #[arg(long)]
+    pub(crate) json: bool,
+    #[arg(long)]
+    pub(crate) long: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]

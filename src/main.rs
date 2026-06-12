@@ -6,6 +6,7 @@ use app::App;
 mod app;
 mod cli;
 mod output;
+mod skill;
 mod sync;
 
 fn main() -> ExitCode {

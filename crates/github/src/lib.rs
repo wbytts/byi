@@ -59,6 +59,12 @@ impl GitHubCli {
     }
 
     pub fn get_file(remote: &GitHubRemote, remote_path: &str) -> Result<String, String> {
+        let bytes = Self::get_file_bytes(remote, remote_path)?;
+
+        String::from_utf8(bytes).map_err(|err| format!("GitHub 文件不是有效 UTF-8: {err}"))
+    }
+
+    pub fn get_file_bytes(remote: &GitHubRemote, remote_path: &str) -> Result<Vec<u8>, String> {
         let endpoint = format!(
             "repos/{}/contents/{}?ref={}",
             remote.repo, remote_path, remote.branch
@@ -71,14 +77,21 @@ impl GitHubCli {
                 .decode(compact)
                 .map_err(|err| format!("解码 GitHub 文件内容失败: {err}"))?
         };
-
-        String::from_utf8(bytes).map_err(|err| format!("GitHub 文件不是有效 UTF-8: {err}"))
+        Ok(bytes)
     }
 
     pub fn put_file(
         remote: &GitHubRemote,
         remote_path: &str,
         contents: &str,
+    ) -> Result<(), String> {
+        Self::put_file_bytes(remote, remote_path, contents.as_bytes())
+    }
+
+    pub fn put_file_bytes(
+        remote: &GitHubRemote,
+        remote_path: &str,
+        contents: &[u8],
     ) -> Result<(), String> {
         let endpoint = format!("repos/{}/contents/{}", remote.repo, remote_path);
         let ref_endpoint = format!("{endpoint}?ref={}", remote.branch);
@@ -109,6 +122,71 @@ impl GitHubCli {
         run_command_owned("gh", &args)?;
         Ok(())
     }
+
+    pub fn delete_file(remote: &GitHubRemote, remote_path: &str) -> Result<(), String> {
+        let endpoint = format!(
+            "repos/{}/contents/{}?ref={}",
+            remote.repo, remote_path, remote.branch
+        );
+        let sha = run_command("gh", &["api", &endpoint, "--jq", ".sha"])?;
+        let delete_endpoint = format!("repos/{}/contents/{}", remote.repo, remote_path);
+        let message = format!("Delete byi data at {remote_path}");
+        let args = vec![
+            "api".to_string(),
+            "--method".to_string(),
+            "DELETE".to_string(),
+            delete_endpoint,
+            "-f".to_string(),
+            field_arg("message", &message),
+            "-f".to_string(),
+            field_arg("sha", sha.trim()),
+            "-f".to_string(),
+            field_arg("branch", &remote.branch),
+        ];
+        run_command_owned("gh", &args)?;
+        Ok(())
+    }
+
+    pub fn list_directory(
+        remote: &GitHubRemote,
+        remote_path: &str,
+    ) -> Result<Vec<GitHubDirectoryEntry>, String> {
+        let trimmed = remote_path.trim_matches('/');
+        let endpoint = if trimmed.is_empty() {
+            format!("repos/{}/contents?ref={}", remote.repo, remote.branch)
+        } else {
+            format!(
+                "repos/{}/contents/{}?ref={}",
+                remote.repo, trimmed, remote.branch
+            )
+        };
+        let output = run_command(
+            "gh",
+            &["api", &endpoint, "--jq", ".[] | [.type, .path] | @tsv"],
+        )?;
+
+        let mut entries = Vec::new();
+        for line in output.lines().filter(|line| !line.trim().is_empty()) {
+            let mut parts = line.splitn(2, '\t');
+            let kind = parts.next().unwrap_or_default().trim();
+            let path = parts.next().unwrap_or_default().trim();
+            if path.is_empty() {
+                continue;
+            }
+            entries.push(GitHubDirectoryEntry {
+                kind: kind.to_string(),
+                path: path.to_string(),
+            });
+        }
+
+        Ok(entries)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubDirectoryEntry {
+    pub kind: String,
+    pub path: String,
 }
 
 fn field_arg(key: &str, value: &str) -> String {

@@ -189,8 +189,7 @@ impl App {
 
     fn sync_pull(&self) -> Result<String, String> {
         let remote = self.require_remote()?;
-        let contents = byi_storage::storage_for(&remote).read_text("metadata.toml")?;
-        self.write_store_file("metadata.toml", &contents)?;
+        self.sync_pull_skill_data()?;
 
         Ok(format!(
             "Pulled remote data.\n{}",
@@ -200,8 +199,7 @@ impl App {
 
     fn sync_push(&self) -> Result<String, String> {
         let remote = self.require_remote()?;
-        let metadata = self.ensure_metadata()?;
-        byi_storage::storage_for(&remote).write_text("metadata.toml", &metadata)?;
+        self.sync_push_skill_data()?;
 
         Ok(format!(
             "Pushed local data.\n{}",

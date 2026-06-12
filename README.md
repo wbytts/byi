@@ -1,25 +1,20 @@
 # byi
 
-`byi` 是一个基于 Cargo workspace + pnpm workspace 的本地工具项目。仓库根目录是主命令行包，`crates/` 下放 Rust 后端和辅助包，`packages/` 下放前端相关项目。
+`byi` 是一个基于 Cargo workspace 的本地 Rust 工具项目。仓库根目录是主命令行包，`crates/` 下放各 Rust 后端和辅助包。
 
 ## 项目结构
 
 ```text
 .
 ├── Cargo.toml
-├── package.json
-├── pnpm-workspace.yaml
 ├── src/main.rs
 ├── crates/
 │   ├── core/
 │   ├── github/
-│   ├── server/
+│   ├── skill/
 │   ├── storage/
 │   ├── webdav/
 │   └── utils/
-├── packages/
-│   ├── pkg/
-│   └── local-web/
 ├── scripts/
 │   ├── install.sh
 │   └── install.ps1
@@ -31,38 +26,7 @@
 ```bash
 cargo test
 cargo run -- --help
-pnpm install
-pnpm --filter local-web build
 ```
-
-## 本地 Web
-
-`byi web` 会启动一个本地 Axum 服务，默认监听 `127.0.0.1:3768`。如果 `packages/local-web/dist` 不存在，会先执行 `pnpm --dir packages/local-web build` 构建 React 静态页面，然后由后端服务同源托管前端页面和 API。
-
-```bash
-cargo run -- web
-byi web
-```
-
-打开：
-
-```text
-http://127.0.0.1:3768
-```
-
-当前 Web API：
-
-```text
-GET /api/health
-GET /api/info
-```
-
-`packages/local-web` 技术栈：
-
-- React + TypeScript + Vite
-- Ant Design
-- Tailwind CSS
-- Zustand
 
 ## 同步配置
 
@@ -126,20 +90,11 @@ byi sync push
 实现边界：
 
 - `crates/github`: GitHub 相关能力封装，包括 GitHub CLI 检测、鉴权引导、repo 检查和 Contents API 文件读写。
-- `crates/server`: Axum 本地后端，提供 `/api/*` 接口并托管 `packages/local-web` 构建后的静态资源。
 - `crates/storage`: 存储抽象层，隔离 GitHub、WebDAV 等具体 remote 实现。
 - `crates/webdav`: WebDAV 配置能力，包括坚果云 preset 和自定义 URL。
+- `crates/skill`: 本地 skill 发现、加载、实例化和扫描。
 
 ## 安装最新版本
-
-### npm
-
-安装后会通过 npm 包内携带的 Rust 二进制执行 `byi`：
-
-```bash
-npm install -g @wbytts/byi
-byi --help
-```
 
 macOS / Linux:
 

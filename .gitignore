@@ -1,7 +1,1 @@
 /target
-node_modules
-packages/*/dist
-packages/*/*.tgz
-packages/*/*.tsbuildinfo
-packages/*/vite.config.js
-packages/*/vite.config.d.ts

@@ -8,6 +8,15 @@ fn run(args: impl IntoIterator<Item = String>) -> Result<String, String> {
     App::default().run(args)
 }
 
+fn test_app_with_config_dir(config_dir: &std::path::Path) -> App {
+    let data_dir = tempfile::tempdir().expect("应该能创建数据目录");
+    App {
+        config_dir: config_dir.to_path_buf(),
+        data_dir: data_dir.keep(),
+        check_github: false,
+    }
+}
+
 #[test]
 fn default_command_outputs_hello_message() {
     let output = run(Vec::<String>::new()).expect("默认命令应该成功");
@@ -64,10 +73,7 @@ fn sync_without_subcommand_shows_sync_help() {
 #[test]
 fn sync_status_without_config_says_remote_is_not_initialized() {
     let temp_dir = tempfile::tempdir().expect("应该能创建临时目录");
-    let app = App {
-        config_dir: temp_dir.path().to_path_buf(),
-        check_github: false,
-    };
+    let app = test_app_with_config_dir(temp_dir.path());
 
     let output = app
         .run(["sync".to_string(), "status".to_string()])
@@ -79,10 +85,7 @@ fn sync_status_without_config_says_remote_is_not_initialized() {
 #[test]
 fn sync_init_with_arguments_writes_local_remote_config() {
     let temp_dir = tempfile::tempdir().expect("应该能创建临时目录");
-    let app = App {
-        config_dir: temp_dir.path().to_path_buf(),
-        check_github: false,
-    };
+    let app = test_app_with_config_dir(temp_dir.path());
 
     let output = app
         .run([
@@ -115,10 +118,7 @@ fn sync_init_with_arguments_writes_local_remote_config() {
 #[test]
 fn sync_init_with_jianguoyun_webdav_writes_webdav_config() {
     let temp_dir = tempfile::tempdir().expect("应该能创建临时目录");
-    let app = App {
-        config_dir: temp_dir.path().to_path_buf(),
-        check_github: false,
-    };
+    let app = test_app_with_config_dir(temp_dir.path());
 
     let output = app
         .run([
@@ -153,10 +153,7 @@ fn sync_init_with_jianguoyun_webdav_writes_webdav_config() {
 #[test]
 fn sync_init_with_custom_webdav_requires_url_and_writes_config() {
     let temp_dir = tempfile::tempdir().expect("应该能创建临时目录");
-    let app = App {
-        config_dir: temp_dir.path().to_path_buf(),
-        check_github: false,
-    };
+    let app = test_app_with_config_dir(temp_dir.path());
 
     let missing_url = app
         .run([
@@ -204,10 +201,7 @@ fn sync_init_with_custom_webdav_requires_url_and_writes_config() {
 #[test]
 fn sync_config_without_remote_shows_initialize_menu() {
     let temp_dir = tempfile::tempdir().expect("应该能创建临时目录");
-    let app = App {
-        config_dir: temp_dir.path().to_path_buf(),
-        check_github: false,
-    };
+    let app = test_app_with_config_dir(temp_dir.path());
 
     let output = app
         .run(["sync".to_string(), "config".to_string()])
@@ -223,10 +217,7 @@ fn sync_config_without_remote_shows_initialize_menu() {
 #[test]
 fn sync_config_with_remote_shows_manage_menu() {
     let temp_dir = tempfile::tempdir().expect("应该能创建临时目录");
-    let app = App {
-        config_dir: temp_dir.path().to_path_buf(),
-        check_github: false,
-    };
+    let app = test_app_with_config_dir(temp_dir.path());
     app.save_config(&ByiConfig {
         remote: Some(RemoteConfig::GitHub(GitHubRemoteConfig {
             repo: "owner/repo".to_string(),

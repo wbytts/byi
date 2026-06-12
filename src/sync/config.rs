@@ -31,39 +31,9 @@ impl App {
         fs::write(&path, contents).map_err(|err| format!("写入配置失败 {}: {err}", path.display()))
     }
 
-    pub(super) fn require_remote(&self) -> Result<RemoteConfig, String> {
+    pub(crate) fn require_remote(&self) -> Result<RemoteConfig, String> {
         self.load_config()?.remote.ok_or_else(|| {
             "Sync remote is not initialized. Run `byi sync config` first.".to_string()
         })
-    }
-
-    fn store_dir(&self) -> std::path::PathBuf {
-        self.config_dir.join("store")
-    }
-
-    pub(super) fn write_store_file(&self, name: &str, contents: &str) -> Result<(), String> {
-        let dir = self.store_dir();
-        fs::create_dir_all(&dir)
-            .map_err(|err| format!("创建本地数据目录失败 {}: {err}", dir.display()))?;
-        let path = dir.join(name);
-        fs::write(&path, contents)
-            .map_err(|err| format!("写入本地数据失败 {}: {err}", path.display()))
-    }
-
-    pub(super) fn ensure_metadata(&self) -> Result<String, String> {
-        let dir = self.store_dir();
-        fs::create_dir_all(&dir)
-            .map_err(|err| format!("创建本地数据目录失败 {}: {err}", dir.display()))?;
-        let path = dir.join("metadata.toml");
-
-        if path.exists() {
-            return fs::read_to_string(&path)
-                .map_err(|err| format!("读取本地数据失败 {}: {err}", path.display()));
-        }
-
-        let contents = "schema_version = 1\ntool = \"byi\"\n";
-        fs::write(&path, contents)
-            .map_err(|err| format!("写入本地数据失败 {}: {err}", path.display()))?;
-        Ok(contents.to_string())
     }
 }

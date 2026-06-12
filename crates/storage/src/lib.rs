@@ -16,8 +16,9 @@ pub struct GitHubRemoteConfig {
 }
 
 pub trait RemoteStorage {
-    fn read_text(&self, file_name: &str) -> Result<String, String>;
-    fn write_text(&self, file_name: &str, contents: &str) -> Result<(), String>;
+    fn read_file(&self, file_name: &str) -> Result<Vec<u8>, String>;
+    fn write_file(&self, file_name: &str, contents: &[u8]) -> Result<(), String>;
+    fn delete_file(&self, file_name: &str) -> Result<(), String>;
     fn test(&self) -> Result<(), String>;
 }
 
@@ -29,25 +30,7 @@ impl GitHubStorage {
     pub fn new(config: GitHubRemoteConfig) -> Self {
         Self { config }
     }
-}
 
-impl RemoteStorage for GitHubStorage {
-    fn read_text(&self, file_name: &str) -> Result<String, String> {
-        let remote_path = join_remote_path(&self.config.base_path, file_name);
-        byi_github::GitHubCli::get_file(&self.github_remote(), &remote_path)
-    }
-
-    fn write_text(&self, file_name: &str, contents: &str) -> Result<(), String> {
-        let remote_path = join_remote_path(&self.config.base_path, file_name);
-        byi_github::GitHubCli::put_file(&self.github_remote(), &remote_path, contents)
-    }
-
-    fn test(&self) -> Result<(), String> {
-        byi_github::GitHubCli::ensure_repo_access(&self.config.repo)
-    }
-}
-
-impl GitHubStorage {
     fn github_remote(&self) -> byi_github::GitHubRemote {
         byi_github::GitHubRemote {
             repo: self.config.repo.clone(),
@@ -57,36 +40,88 @@ impl GitHubStorage {
     }
 }
 
+impl RemoteStorage for GitHubStorage {
+    fn read_file(&self, file_name: &str) -> Result<Vec<u8>, String> {
+        let remote_path = join_remote_path(&self.config.base_path, file_name);
+        byi_github::GitHubCli::get_file_bytes(&self.github_remote(), &remote_path)
+    }
+
+    fn write_file(&self, file_name: &str, contents: &[u8]) -> Result<(), String> {
+        let remote_path = join_remote_path(&self.config.base_path, file_name);
+        byi_github::GitHubCli::put_file_bytes(&self.github_remote(), &remote_path, contents)
+    }
+
+    fn delete_file(&self, file_name: &str) -> Result<(), String> {
+        let remote_path = join_remote_path(&self.config.base_path, file_name);
+        byi_github::GitHubCli::delete_file(&self.github_remote(), &remote_path)
+    }
+
+    fn test(&self) -> Result<(), String> {
+        byi_github::GitHubCli::ensure_repo_access(&self.config.repo)
+    }
+}
+
 pub struct WebDavStorage {
-    config: byi_webdav::WebDavRemoteConfig,
+    client: byi_webdav::WebDavClient,
 }
 
 impl WebDavStorage {
     pub fn new(config: byi_webdav::WebDavRemoteConfig) -> Self {
-        Self { config }
+        Self {
+            client: byi_webdav::WebDavClient::new(config),
+        }
+    }
+
+    fn ensure_collection_path(&self, file_name: &str) -> Result<(), String> {
+        let path = std::path::Path::new(file_name);
+        let mut current = String::new();
+
+        for component in path.components() {
+            let std::path::Component::Normal(part) = component else {
+                continue;
+            };
+            let part = part.to_string_lossy();
+            if current.is_empty() {
+                current.push_str(&part);
+            } else {
+                current.push('/');
+                current.push_str(&part);
+            }
+        }
+
+        if let Some((parent, _)) = current.rsplit_once('/') {
+            let mut prefix = String::new();
+            for segment in parent.split('/') {
+                if prefix.is_empty() {
+                    prefix.push_str(segment);
+                } else {
+                    prefix.push('/');
+                    prefix.push_str(segment);
+                }
+                let _ = self.client.mkcol(&prefix);
+            }
+        }
+
+        Ok(())
     }
 }
 
 impl RemoteStorage for WebDavStorage {
-    fn read_text(&self, _file_name: &str) -> Result<String, String> {
-        Err(format!(
-            "WebDAV remote is not implemented yet: {}",
-            self.config.endpoint_url
-        ))
+    fn read_file(&self, file_name: &str) -> Result<Vec<u8>, String> {
+        self.client.get(file_name)
     }
 
-    fn write_text(&self, _file_name: &str, _contents: &str) -> Result<(), String> {
-        Err(format!(
-            "WebDAV remote is not implemented yet: {}",
-            self.config.endpoint_url
-        ))
+    fn write_file(&self, file_name: &str, contents: &[u8]) -> Result<(), String> {
+        self.ensure_collection_path(file_name)?;
+        self.client.put(file_name, contents)
+    }
+
+    fn delete_file(&self, file_name: &str) -> Result<(), String> {
+        self.client.delete(file_name)
     }
 
     fn test(&self) -> Result<(), String> {
-        Err(format!(
-            "WebDAV remote is not implemented yet: {}",
-            self.config.endpoint_url
-        ))
+        self.client.test()
     }
 }
 
@@ -99,9 +134,12 @@ pub fn storage_for(remote: &RemoteConfig) -> Box<dyn RemoteStorage> {
 
 pub fn join_remote_path(base_path: &str, file_name: &str) -> String {
     let base_path = base_path.trim_matches('/');
+    let file_name = file_name.trim_matches('/');
 
     if base_path.is_empty() {
         file_name.to_string()
+    } else if file_name.is_empty() {
+        base_path.to_string()
     } else {
         format!("{base_path}/{file_name}")
     }

@@ -1,0 +1,17 @@
+[package]
+name = "byi-tui"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+byi-core = { path = "../core" }
+byi-skill = { path = "../skill" }
+byi-storage = { path = "../storage" }
+byi-github = { path = "../github" }
+byi-webdav = { path = "../webdav" }
+byi-utils = { path = "../utils" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.9"
+dirs = "6"

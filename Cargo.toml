@@ -7,8 +7,9 @@ edition = "2024"
 members = [
     "crates/core",
     "crates/github",
-    "crates/server",
+    "crates/skill",
     "crates/storage",
+    "crates/tui",
     "crates/utils",
     "crates/webdav",
 ]
@@ -17,14 +18,15 @@ resolver = "3"
 [dependencies]
 byi-core = { path = "crates/core" }
 byi-github = { path = "crates/github" }
-byi-server = { version = "0.0.1", path = "crates/server" }
+byi-skill = { path = "crates/skill" }
 byi-storage = { path = "crates/storage" }
+byi-tui = { path = "crates/tui" }
+byi-utils = { path = "crates/utils" }
 byi-webdav = { path = "crates/webdav" }
 clap = { version = "4.6.1", features = ["derive"] }
 dialoguer = "0.12.0"
 dirs = "6.0.0"
 serde = { version = "1.0.228", features = ["derive"] }
-tokio = { version = "1.52.3", features = ["full"] }
 toml = "0.9.8"
 
 [dev-dependencies]

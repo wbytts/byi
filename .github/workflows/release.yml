@@ -19,11 +19,6 @@ on:
         required: false
         default: false
         type: boolean
-      publish_npm:
-        description: "是否发布到 npm"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
@@ -42,7 +37,6 @@ jobs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
       package_version: ${{ steps.meta.outputs.package_version }}
       should_publish_release: ${{ steps.meta.outputs.should_publish_release }}
-      should_publish_npm: ${{ steps.meta.outputs.should_publish_npm }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,40 +52,29 @@ jobs:
           INPUT_REF: ${{ inputs.ref }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
           INPUT_PUBLISH_RELEASE: ${{ inputs.publish_release }}
-          INPUT_PUBLISH_NPM: ${{ inputs.publish_npm }}
           PUSH_TAG: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
         run: |
           set -euo pipefail
 
-          PACKAGE_VERSION="$(node -p "require('./packages/pkg/package.json').version")"
+          PACKAGE_VERSION="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')"
           CHECKOUT_REF="${INPUT_REF:-${PUSH_TAG}}"
           TARGET_SHA="$(git rev-parse HEAD)"
           RELEASE_TAG=""
           SHOULD_PUBLISH_RELEASE="false"
-          SHOULD_PUBLISH_NPM="false"
 
           if [ "$EVENT_NAME" = "push" ]; then
             RELEASE_TAG="$PUSH_TAG"
             SHOULD_PUBLISH_RELEASE="true"
-            SHOULD_PUBLISH_NPM="$HAS_NPM_TOKEN"
           else
-            if [ "${INPUT_PUBLISH_RELEASE}" = "true" ] || [ "${INPUT_PUBLISH_NPM}" = "true" ]; then
+            if [ "${INPUT_PUBLISH_RELEASE}" = "true" ]; then
               if [ -z "${INPUT_RELEASE_TAG}" ]; then
                 echo "手动发布时必须提供 release_tag，例如 v0.0.1" >&2
                 exit 1
               fi
               RELEASE_TAG="$INPUT_RELEASE_TAG"
             fi
-
             SHOULD_PUBLISH_RELEASE="${INPUT_PUBLISH_RELEASE:-false}"
-            SHOULD_PUBLISH_NPM="${INPUT_PUBLISH_NPM:-false}"
-
-            if [ "$SHOULD_PUBLISH_NPM" = "true" ] && [ "$HAS_NPM_TOKEN" != "true" ]; then
-              echo "仓库未配置 NPM_TOKEN，不能执行 npm 发布。" >&2
-              exit 1
-            fi
           fi
 
           if [ -n "$RELEASE_TAG" ]; then
@@ -105,12 +88,12 @@ jobs:
 
             TAG_VERSION="${RELEASE_TAG#v}"
             if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
-              echo "版本不一致: tag=$TAG_VERSION, packages/pkg/package.json=$PACKAGE_VERSION" >&2
+              echo "版本不一致: tag=$TAG_VERSION, Cargo.toml=$PACKAGE_VERSION" >&2
               exit 1
             fi
           fi
 
-          if [ "$SHOULD_PUBLISH_RELEASE" = "true" ] || [ "$SHOULD_PUBLISH_NPM" = "true" ]; then
+          if [ "$SHOULD_PUBLISH_RELEASE" = "true" ]; then
             git fetch origin "$DEFAULT_BRANCH" --depth=1
             if ! git merge-base --is-ancestor "$TARGET_SHA" "origin/$DEFAULT_BRANCH"; then
               echo "当前提交不在 $DEFAULT_BRANCH 分支历史上，拒绝发布。" >&2
@@ -124,7 +107,6 @@ jobs:
             echo "release_tag=$RELEASE_TAG"
             echo "package_version=$PACKAGE_VERSION"
             echo "should_publish_release=$SHOULD_PUBLISH_RELEASE"
-            echo "should_publish_npm=$SHOULD_PUBLISH_NPM"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -189,23 +171,6 @@ jobs:
           path: byi-${{ matrix.target }}.${{ matrix.archive }}
           if-no-files-found: error
 
-      - name: Stage npm binary
-        shell: bash
-        run: |
-          mkdir -p "npm/${{ matrix.target }}/release"
-          if [ "${{ matrix.archive }}" = "zip" ]; then
-            cp "target/${{ matrix.target }}/release/byi.exe" "npm/${{ matrix.target }}/release/byi.exe"
-          else
-            cp "target/${{ matrix.target }}/release/byi" "npm/${{ matrix.target }}/release/byi"
-          fi
-
-      - name: Upload npm binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-${{ matrix.target }}
-          path: npm/${{ matrix.target }}
-          if-no-files-found: error
-
   release:
     name: Publish GitHub Release
     runs-on: ubuntu-24.04
@@ -226,29 +191,6 @@ jobs:
           pattern: byi-*
           merge-multiple: true
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Download npm binary artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/npm
-          pattern: npm-*
-          merge-multiple: true
-
-      - name: Pack npm package
-        env:
-          BYI_PKG_SOURCE_DIR: ${{ github.workspace }}/artifacts/npm
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/release-bundle"
-          cp "$GITHUB_WORKSPACE"/artifacts/release-assets/* "$GITHUB_WORKSPACE/release-bundle/"
-          cd packages/pkg
-          PACK_OUTPUT="$(npm pack --json)"
-          PACK_FILE="$(printf '%s\n' "$PACK_OUTPUT" | node -e "const fs = require('node:fs'); const text = fs.readFileSync(0, 'utf8'); const jsonStart = text.indexOf('['); if (jsonStart === -1) { process.stderr.write(text); process.exit(1); } const data = JSON.parse(text.slice(jsonStart)); process.stdout.write(data[0].filename);")"
-          mv "$PACK_FILE" "$GITHUB_WORKSPACE/release-bundle/"
-
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -256,47 +198,13 @@ jobs:
           TARGET_SHA: ${{ needs.prepare.outputs.target_sha }}
         run: |
           if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" release-bundle/* \
+            gh release upload "$TAG_NAME" artifacts/release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
           else
-            gh release create "$TAG_NAME" release-bundle/* \
+            gh release create "$TAG_NAME" artifacts/release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --target "$TARGET_SHA" \
               --title "$TAG_NAME" \
               --generate-notes
           fi
-
-  publish-npm:
-    name: Publish npm Package
-    runs-on: ubuntu-24.04
-    needs:
-      - prepare
-      - build
-    if: ${{ needs.prepare.outputs.should_publish_npm == 'true' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.checkout_ref }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-
-      - name: Download npm binary artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/npm
-          pattern: npm-*
-          merge-multiple: true
-
-      - name: Publish package to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          BYI_PKG_SOURCE_DIR: ${{ github.workspace }}/artifacts/npm
-        run: |
-          cd packages/pkg
-          npm publish --access public
